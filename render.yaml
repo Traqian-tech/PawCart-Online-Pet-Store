@@ -1,0 +1,24 @@
+# Render Deployment Configuration
+# Use this file to quickly deploy on Render
+
+services:
+  - type: web
+    name: pawcart
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # The following variables need to be set manually in Render Dashboard:
+      # - MONGODB_URI (or DATABASE_URL)
+      # - VITE_SUPABASE_URL
+      # - VITE_SUPABASE_ANON_KEY
+      # - SESSION_SECRET
+      # - RESEND_API_KEY (optional)
+      # - FROM_EMAIL (optional)
+      # - DEEPSEEK_API_KEY (optional, or other AI API key)
+

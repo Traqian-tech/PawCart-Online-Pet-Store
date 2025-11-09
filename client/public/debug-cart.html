@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cart Debug</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 { color: #4ec9b0; }
+        pre {
+            background: #252526;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        button:hover { background: #1177bb; }
+        .section { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>🛒 Cart LocalStorage Debug</h1>
+    
+    <div class="section">
+        <h2>Current Cart Data:</h2>
+        <pre id="cartData">Loading...</pre>
+    </div>
+    
+    <div class="section">
+        <button onclick="refresh()">🔄 Refresh</button>
+        <button onclick="clearCart()">🗑️ Clear Cart</button>
+    </div>
+    
+    <script>
+        function refresh() {
+            const cartData = localStorage.getItem('meow-meow-cart');
+            const dataEl = document.getElementById('cartData');
+            
+            if (cartData) {
+                try {
+                    const parsed = JSON.parse(cartData);
+                    dataEl.textContent = JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    dataEl.textContent = 'Error parsing cart data:\n' + cartData;
+                }
+            } else {
+                dataEl.textContent = 'No cart data found in localStorage';
+            }
+        }
+        
+        function clearCart() {
+            localStorage.removeItem('meow-meow-cart');
+            refresh();
+        }
+        
+        // Auto refresh every 2 seconds
+        setInterval(refresh, 2000);
+        
+        // Initial load
+        refresh();
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

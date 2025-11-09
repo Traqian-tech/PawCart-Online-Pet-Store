@@ -1,0 +1,35 @@
+# Cursor ignore file
+# .env is NOT included here, so it will be accessible in Cursor
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+
+# Uploads and temporary files
+uploads/
+*.tmp
+*.temp
+
+
+
+
+
+
+
+
