@@ -96,3 +96,5 @@ You can customize this template in Supabase Dashboard, change it to Chinese or a
 **Date**: 2025-11-08
 **SMTP Configuration Not Needed**: ✅ Using Supabase email service
 
+
+

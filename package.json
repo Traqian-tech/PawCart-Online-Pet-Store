@@ -17,7 +17,13 @@
     "check-users": "cross-env NODE_ENV=development npx tsx server/check-users.ts",
     "mark-member-products": "cross-env NODE_ENV=development npx tsx server/mark-member-products.ts",
     "membership-cron": "cross-env NODE_ENV=development npx tsx server/membership-cron.ts",
-    "verify-order-discounts": "cross-env NODE_ENV=development npx tsx server/verify-order-discounts.ts"
+    "verify-order-discounts": "cross-env NODE_ENV=development npx tsx server/verify-order-discounts.ts",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:copy": "npx cap copy",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android",
+    "cap:add:ios": "npx cap add ios",
+    "cap:add:android": "npx cap add android"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",

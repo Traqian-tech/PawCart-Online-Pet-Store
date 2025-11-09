@@ -200,21 +200,21 @@ PawCart-Online-Pet-Store/
 The application can be deployed to various platforms:
 
 #### Render (Recommended for Beginners)
-- **Guide**: See [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md)
-- **Quick Guide**: See [RENDER_快速部署.md](./RENDER_快速部署.md) (Chinese)
+- **Guide**: See [RENDER_DEPLOYMENT.md](./docs/deployment/RENDER_DEPLOYMENT.md)
+- **Quick Guide**: See [RENDER_快速部署.md](./docs/deployment/RENDER_快速部署.md) (Chinese)
 - **Free Tier**: Available with sleep mode after 15 minutes
 
 #### Railway
-- **Guide**: See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+- **Guide**: See [DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md)
 - **Free Tier**: $5 credit monthly
 
 #### Fly.io
-- **Guide**: See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+- **Guide**: See [DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md)
 - **Global Edge**: Fast worldwide deployment
 
 #### Vercel + Railway
 - Frontend on Vercel, Backend on Railway
-- See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for details
+- See [DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md) for details
 
 ### Environment Variables for Production
 
@@ -239,9 +239,9 @@ Ensure all required environment variables are set in your deployment platform:
 3. **Email Service**: Configure Resend or SMTP for production email features
 
 For detailed deployment instructions, see:
-- [QUICK_START.md](./QUICK_START.md) - Quick deployment guide
-- [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) - Complete deployment guide
-- [ENV_VARIABLES.md](./ENV_VARIABLES.md) - Environment variables guide
+- [QUICK_START.md](./docs/quick-start/QUICK_START.md) - Quick deployment guide
+- [DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md) - Complete deployment guide
+- [ENV_VARIABLES.md](./docs/configuration/ENV_VARIABLES.md) - Environment variables guide
 
 ## 🎯 Key Features in Detail
 
@@ -330,15 +330,16 @@ Default admin credentials:
 
 ## 📚 Documentation
 
-Comprehensive documentation is available:
+Comprehensive documentation is available in the [`docs/`](./docs/) directory:
 
-- [QUICK_START.md](./QUICK_START.md) - Quick deployment guide
-- [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) - Complete deployment instructions
-- [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md) - Render-specific deployment
-- [ENV_VARIABLES.md](./ENV_VARIABLES.md) - Environment variables reference
-- [README_MEMBERSHIP_FEATURES.md](./README_MEMBERSHIP_FEATURES.md) - Membership system guide
-- [WALLET_SYSTEM_SUMMARY.md](./WALLET_SYSTEM_SUMMARY.md) - Wallet system documentation
-- [CUSTOMER_SUPPORT_README.md](./CUSTOMER_SUPPORT_README.md) - Customer support features
+- **Quick Start**: [docs/quick-start/QUICK_START.md](./docs/quick-start/QUICK_START.md) - Quick deployment guide
+- **Deployment**: [docs/deployment/DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md) - Complete deployment instructions
+- **Configuration**: [docs/configuration/ENV_VARIABLES.md](./docs/configuration/ENV_VARIABLES.md) - Environment variables reference
+- **Membership**: [docs/membership/README_MEMBERSHIP_FEATURES.md](./docs/membership/README_MEMBERSHIP_FEATURES.md) - Membership system guide
+- **Wallet**: [docs/wallet/WALLET_SYSTEM_SUMMARY.md](./docs/wallet/WALLET_SYSTEM_SUMMARY.md) - Wallet system documentation
+- **Customer Support**: [docs/features/CUSTOMER_SUPPORT_README.md](./docs/features/CUSTOMER_SUPPORT_README.md) - Customer support features
+
+See [docs/README.md](./docs/README.md) for a complete documentation index.
 
 ## 🤝 Contributing
 
@@ -381,7 +382,7 @@ Contributions are welcome! Please follow these steps:
 - Verify email service credentials
 - Check spam folder
 - For Gmail, use App Password instead of regular password
-- See [EMAIL_SETUP_GUIDE.md](./EMAIL_SETUP_GUIDE.md) for detailed setup
+- See [docs/features/EMAIL_SETUP_GUIDE.md](./docs/features/EMAIL_SETUP_GUIDE.md) for detailed setup
 
 ## 📄 License
 
