@@ -250,22 +250,39 @@ export default function CheckoutPage() {
         email: user.email || ''
       }));
       
-      // Fetch saved addresses
-      const userId = user.id || (user as any)._id || (user as any).userId;
-      if (userId) {
+      // Fetch saved addresses - use consistent userId format
+      const userId = String((user as any)?._id || (user as any)?.id || user?.id || '');
+      if (userId && userId !== 'undefined' && userId !== 'null') {
+        console.log('[Checkout] Fetching addresses for user:', userId);
         fetch(`/api/addresses/user/${userId}`)
-          .then(res => res.json())
+          .then(res => {
+            if (!res.ok) {
+              console.error('[Checkout] Failed to fetch addresses - HTTP status:', res.status);
+              return res.json().then(err => {
+                throw new Error(err.message || `HTTP ${res.status}`);
+              });
+            }
+            return res.json();
+          })
           .then(data => {
+            console.log('[Checkout] Fetched addresses response:', data);
             if (Array.isArray(data)) {
+              console.log(`[Checkout] Found ${data.length} addresses for user ${userId}`);
               setSavedAddresses(data);
               // Auto-select default address if available
               const defaultAddress = data.find(addr => addr.isDefault);
               if (defaultAddress) {
                 handleSelectAddress(defaultAddress);
               }
+            } else {
+              console.warn('[Checkout] Addresses response is not an array:', data);
+              setSavedAddresses([]);
             }
           })
-          .catch(err => console.error('Failed to fetch addresses:', err));
+          .catch(err => {
+            console.error('[Checkout] Failed to fetch addresses:', err);
+            setSavedAddresses([]);
+          });
       }
     }
   }, [user]);

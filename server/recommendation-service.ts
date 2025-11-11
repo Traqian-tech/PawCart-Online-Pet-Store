@@ -1,4 +1,4 @@
-import { Product, Order, UserBehavior, ProductRecommendation } from '../shared/models';
+import { Product, Order, UserBehavior, ProductRecommendation, Pet } from '../shared/models';
 import mongoose from 'mongoose';
 
 export interface RecommendationOptions {
@@ -68,6 +68,12 @@ export class RecommendationService {
     if (userId || sessionId) {
       const categoryRecs = await this.getCategoryBasedRecommendations(userId, sessionId, limit, excludeProductIds);
       recommendations.push(...categoryRecs);
+    }
+
+    // Strategy 5: Based on pet profiles
+    if (userId) {
+      const petRecs = await this.getRecommendationsFromPetProfiles(userId, limit, excludeProductIds);
+      recommendations.push(...petRecs);
     }
 
     // Merge and deduplicate recommendations
@@ -600,6 +606,81 @@ export class RecommendationService {
       score: 0.5,
       reason: 'Popular in your preferred categories'
     }));
+  }
+
+  /**
+   * Get recommendations based on user's pet profiles
+   */
+  private async getRecommendationsFromPetProfiles(
+    userId: string,
+    limit: number,
+    excludeProductIds: string[]
+  ): Promise<RecommendedProduct[]> {
+    try {
+      // Get user's pets
+      const pets = await Pet.find({ userId, isActive: true }).lean();
+      
+      if (pets.length === 0) {
+        return [];
+      }
+
+      // Map species to category slugs/names
+      const speciesToCategoryMap: Record<string, string[]> = {
+        cat: ['cat-food', 'cat-toys', 'cat-litter', 'cat-care', 'cat-accessories'],
+        dog: ['dog-food', 'dog-accessories'],
+        rabbit: ['rabbit'],
+        bird: ['bird'],
+        hamster: ['hamster'],
+        other: []
+      };
+
+      // Collect all relevant categories
+      const relevantCategories = new Set<string>();
+      pets.forEach(pet => {
+        const categories = speciesToCategoryMap[pet.species] || [];
+        categories.forEach(cat => relevantCategories.add(cat));
+      });
+
+      if (relevantCategories.size === 0) {
+        return [];
+      }
+
+      // Find products in relevant categories
+      // Note: This assumes category slugs match. You may need to adjust based on your category structure
+      const products = await Product.find({
+        isActive: true,
+        stockQuantity: { $gt: 0 },
+        _id: { $nin: excludeProductIds.map(id => new mongoose.Types.ObjectId(id)) }
+      })
+        .lean();
+
+      // Filter products by category (you may need to join with Category collection)
+      // For now, we'll use a simple approach based on product tags or subcategory
+      const recommendedProducts = products
+        .filter(product => {
+          // Check if product matches any pet's species
+          const productCategory = product.subcategory?.toLowerCase() || '';
+          const productTags = (product.tags || []).map(t => t.toLowerCase());
+          
+          return pets.some(pet => {
+            const categories = speciesToCategoryMap[pet.species] || [];
+            return categories.some(cat => 
+              productCategory.includes(cat.replace('-', '')) ||
+              productTags.some(tag => tag.includes(pet.species))
+            );
+          });
+        })
+        .slice(0, limit);
+
+      return recommendedProducts.map((product) => ({
+        product,
+        score: 0.8,
+        reason: `Recommended for your ${pets.map(p => p.name).join(', ')}`
+      }));
+    } catch (error) {
+      console.error('Error getting pet-based recommendations:', error);
+      return [];
+    }
   }
 
   private mergeAndDeduplicate(

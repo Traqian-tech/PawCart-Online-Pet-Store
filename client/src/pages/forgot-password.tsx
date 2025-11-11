@@ -69,32 +69,74 @@ export default function ForgotPasswordPage() {
     setLoading(true)
 
     try {
+      // Check if Supabase client is available
+      if (!supabase) {
+        console.error('❌ Supabase client not initialized');
+        toast({
+          title: 'Configuration Error',
+          description: 'Authentication service is not configured. Please contact support.',
+          variant: 'destructive',
+        })
+        setLoading(false)
+        return
+      }
+
       // Get the correct redirect URL for password reset
       const redirectUrl = getPasswordResetUrl();
 
-      console.log('Password reset redirect URL:', redirectUrl);
+      console.log('📧 Password Reset Request:');
+      console.log('  - Email:', email);
+      console.log('  - Redirect URL:', redirectUrl);
+      console.log('  - Supabase URL:', import.meta.env.VITE_SUPABASE_URL ? 'Configured' : 'Missing');
+      console.log('  - Supabase Key:', import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Configured' : 'Missing');
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: redirectUrl,
       })
 
+      console.log('📬 Password Reset Response:');
+      console.log('  - Data:', data);
+      console.log('  - Error:', error);
+
       if (error) {
+        console.error('❌ Password reset error:', error);
+        
+        // Provide more helpful error messages
+        let errorMessage = error.message;
+        let errorTitle = 'Reset Failed';
+        
+        if (error.message.includes('rate limit') || error.message.includes('too many')) {
+          errorTitle = 'Too Many Requests';
+          errorMessage = 'Please wait a few minutes before trying again.';
+        } else if (error.message.includes('invalid') || error.message.includes('Invalid')) {
+          errorTitle = 'Invalid Email';
+          errorMessage = 'Please check your email address and try again.';
+        } else if (error.message.includes('email')) {
+          errorTitle = 'Email Error';
+          errorMessage = 'There was an issue with the email address. Please verify it and try again.';
+        } else if (error.message.includes('redirect') || error.message.includes('URL')) {
+          errorTitle = 'Configuration Error';
+          errorMessage = 'The redirect URL is not configured. Please contact support.';
+        }
+        
         toast({
-          title: 'Reset Failed',
-          description: error.message,
+          title: errorTitle,
+          description: errorMessage,
           variant: 'destructive',
         })
       } else {
+        console.log('✅ Password reset email request successful');
         setIsSubmitted(true)
         toast({
           title: 'Reset Email Sent',
           description: 'Check your email for password reset instructions',
         })
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('❌ Unexpected error during password reset:', error);
       toast({
         title: 'Error',
-        description: 'An unexpected error occurred',
+        description: error?.message || 'An unexpected error occurred. Please try again later.',
         variant: 'destructive',
       })
     } finally {
@@ -146,6 +188,21 @@ export default function ForgotPasswordPage() {
                   <li>• Create a new password</li>
                   <li>• Sign in with your new password</li>
                 </ul>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <h4 className="font-semibold text-yellow-800 mb-2">⚠️ Didn't receive the email?</h4>
+                <ul className="text-sm text-yellow-700 space-y-1">
+                  <li>• Check your spam/junk folder</li>
+                  <li>• Wait a few minutes (emails may be delayed)</li>
+                  <li>• Verify the email address is correct: <strong>{email}</strong></li>
+                  <li>• Make sure your Supabase email service is configured</li>
+                  <li>• Check Supabase Dashboard → Authentication → Logs for errors</li>
+                </ul>
+                <p className="text-xs text-yellow-600 mt-2">
+                  If you still don't receive the email, the Supabase email service may not be configured. 
+                  Please check your Supabase Dashboard settings.
+                </p>
               </div>
 
               <div className="space-y-3">

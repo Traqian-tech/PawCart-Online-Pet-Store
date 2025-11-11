@@ -89,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include cookies to establish session
         body: JSON.stringify({ email, password }),
       });
 
@@ -141,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch(`/api/auth/profile/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include cookies for session authentication
         body: JSON.stringify(profileData),
       });
 
@@ -170,7 +172,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userIdentifier = user.email || (user as any)?._id || (user as any)?.id || user.id || user.username;
       
       console.log('Refreshing user with identifier:', userIdentifier);
-      const response = await fetch(`/api/auth/profile/${encodeURIComponent(userIdentifier)}`);
+      const response = await fetch(`/api/auth/profile/${encodeURIComponent(userIdentifier)}`, {
+        credentials: 'include', // Include cookies for session authentication
+      });
       
       if (response.ok) {
         const data = await response.json();

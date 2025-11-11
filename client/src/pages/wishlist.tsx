@@ -141,7 +141,7 @@ export default function WishlistPage() {
                 className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
-                清空收藏
+                Clear Wishlist
               </Button>
             )}
           </div>
@@ -184,15 +184,15 @@ export default function WishlistPage() {
               </motion.div>
             </div>
             <h2 className="text-2xl font-bold text-gray-700 mt-6 mb-2">
-              收藏夹空空如也
+              Your Wishlist is Empty
             </h2>
             <p className="text-gray-500 mb-6 text-center max-w-md">
-              快去挑选您喜欢的商品吧！点击商品上的爱心图标即可收藏
+              Start adding your favorite products! Click the heart icon on any product to add it to your wishlist.
             </p>
             <Link href="/products">
               <Button className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white shadow-lg hover:shadow-xl transition-all">
                 <ShoppingBag className="w-4 h-4 mr-2" />
-                去逛逛
+                Go Shopping
               </Button>
             </Link>
           </motion.div>
@@ -240,7 +240,7 @@ export default function WishlistPage() {
                             transition={{ delay: index * 0.1 }}
                           >
                             <Heart className="w-3 h-3 inline mr-1 fill-white" />
-                            收藏
+                            Wishlist
                           </motion.div>
                         </div>
                       </Link>
@@ -269,7 +269,7 @@ export default function WishlistPage() {
                             className="flex-1 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white shadow-md hover:shadow-lg transition-all"
                           >
                             <ShoppingCart className="w-4 h-4 mr-2" />
-                            加入购物车
+                            Add to Cart
                           </Button>
                           <Button
                             onClick={() => handleRemove(item.id, item.name)}
@@ -305,12 +305,12 @@ export default function WishlistPage() {
                       <Heart className="w-8 h-8 fill-white" />
                     </div>
                     <div>
-                      <p className="text-white/80 text-sm">收藏总数</p>
-                      <p className="text-3xl font-bold">{items.length} 件商品</p>
+                      <p className="text-white/80 text-sm">Total Items</p>
+                      <p className="text-3xl font-bold">{items.length} items</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-white/80 text-sm">总价值</p>
+                    <p className="text-white/80 text-sm">Total Value</p>
                     <p className="text-3xl font-bold">
                       {format(items.reduce((sum, item) => sum + item.price, 0))}
                     </p>

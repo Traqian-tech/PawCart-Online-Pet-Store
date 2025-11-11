@@ -1,6 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, BarChart as RechartsBarChart, Bar, PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { BarChart2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -31,7 +34,7 @@ import {
   Package, FileEdit, Plus, Trash2, ArrowLeft, Search, 
   Filter, Grid, List, Eye, Edit, Save, X, 
   Home, PawPrint, BookOpen, Speaker, Grid3X3, Coffee, Tag, ShoppingCart, Image as ImageIcon,
-  Users, Mail, Phone, Calendar, Shield, Ban
+  Users, Mail, Phone, Calendar, Shield, Ban, FileCheck, DollarSign
 } from "lucide-react";
 
 // Form validation schemas
@@ -162,6 +165,55 @@ interface PopupPoster {
   updatedAt: Date;
 }
 
+interface ServiceRequest {
+  _id: string;
+  userId: string;
+  type: 'product_inquiry' | 'return_refund' | 'custom_order' | 'complaint' | 'other';
+  subject: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high';
+  orderId?: string;
+  attachments?: string[];
+  response?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const REQUEST_STATUS_LABELS: Record<ServiceRequest['status'], string> = {
+  pending: 'Pending',
+  in_progress: 'In Progress',
+  resolved: 'Resolved',
+  closed: 'Closed',
+};
+
+const REQUEST_PRIORITY_LABELS: Record<ServiceRequest['priority'], string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
+const REQUEST_TYPE_LABELS: Record<ServiceRequest['type'], string> = {
+  product_inquiry: 'Product Inquiry',
+  return_refund: 'Return & Refund',
+  custom_order: 'Custom Order',
+  complaint: 'Complaint',
+  other: 'Other',
+};
+
+const REQUEST_STATUS_BADGES: Record<ServiceRequest['status'], string> = {
+  pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  in_progress: 'bg-blue-100 text-blue-800 border-blue-200',
+  resolved: 'bg-green-100 text-green-800 border-green-200',
+  closed: 'bg-gray-100 text-gray-700 border-gray-200',
+};
+
+const REQUEST_PRIORITY_BADGES: Record<ServiceRequest['priority'], string> = {
+  low: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  medium: 'bg-amber-100 text-amber-800 border-amber-200',
+  high: 'bg-red-100 text-red-800 border-red-200',
+};
+
 export default function AdminPage() {
   const { user, signOut, loading } = useAuth();
   const { toast } = useToast();
@@ -169,6 +221,46 @@ export default function AdminPage() {
 
   // All state hooks declared at the top level (not conditionally)
   const [activeTab, setActiveTab] = useState('products');
+
+  // Admin analytics data
+  const { data: analyticsData, isLoading: isLoadingAnalytics, error: analyticsError } = useQuery<any>({
+    queryKey: ['admin-analytics'],
+    enabled:
+      activeTab === 'analytics' &&
+      !!(user?._id || (user as any)?.id || (user as any)?.userId) &&
+      ((user as any)?.role === 'admin'),
+    queryFn: async () => {
+      const adminUserId = String(user?._id || (user as any)?.id || (user as any)?.userId || '');
+      const url = `/api/admin/analytics?userId=${encodeURIComponent(adminUserId)}`;
+      const res = await fetch(url, {
+        credentials: 'include',
+        headers: {
+          'x-user-id': adminUserId,
+        },
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        let details = '';
+        if (text) {
+          try {
+            const parsed = JSON.parse(text);
+            details = typeof parsed?.message === 'string' ? parsed.message : text;
+          } catch {
+            details = text;
+          }
+        }
+        const baseMessage =
+          res.status === 401
+            ? 'You are not authenticated.'
+            : res.status === 403
+            ? 'Admin access required.'
+            : 'Failed to fetch analytics';
+        const finalMessage = details && details !== baseMessage ? `${baseMessage}: ${details}` : baseMessage;
+        throw new Error(finalMessage);
+      }
+      return res.json();
+    }
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockFilter, setStockFilter] = useState('all');
@@ -197,6 +289,11 @@ export default function AdminPage() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('all');
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [requestSearchTerm, setRequestSearchTerm] = useState('');
+  const [requestStatusFilter, setRequestStatusFilter] = useState<'all' | ServiceRequest['status']>('all');
+  const [requestPriorityFilter, setRequestPriorityFilter] = useState<'all' | ServiceRequest['priority']>('all');
+  const [requestEdits, setRequestEdits] = useState<Record<string, { status: ServiceRequest['status']; priority: ServiceRequest['priority']; response: string }>>({});
+  const [updatingRequestId, setUpdatingRequestId] = useState<string | null>(null);
 
   // All queries declared at the top level (not conditionally)
   const { data: products = [], isLoading: isLoadingProducts, refetch: refetchProducts } = useQuery({
@@ -253,6 +350,144 @@ export default function AdminPage() {
     queryKey: ['/api/admin/users'],
     enabled: !!user && user.role === 'admin',
   });
+
+  const { data: requests = [], isLoading: isLoadingRequests, refetch: refetchRequests } = useQuery<ServiceRequest[]>({
+    queryKey: ['/api/requests'],
+    enabled: !!user && user.role === 'admin',
+  });
+
+  const userLookup = useMemo(() => {
+    const map = new Map<string, any>();
+    (users as any[]).forEach((u: any) => {
+      const id = String(u?._id || u?.id || u?.userId || '');
+      if (id) {
+        map.set(id, u);
+      }
+    });
+    return map;
+  }, [users]);
+
+  useEffect(() => {
+    if (!requests || requests.length === 0) {
+      setRequestEdits({});
+      return;
+    }
+    const initialEdits: Record<string, { status: ServiceRequest['status']; priority: ServiceRequest['priority']; response: string }> = {};
+    requests.forEach((req) => {
+      initialEdits[req._id] = {
+        status: req.status,
+        priority: req.priority,
+        response: req.response ?? '',
+      };
+    });
+    setRequestEdits(initialEdits);
+  }, [requests]);
+
+  const requestStats = useMemo(() => {
+    const statusCounts: Record<ServiceRequest['status'], number> = {
+      pending: 0,
+      in_progress: 0,
+      resolved: 0,
+      closed: 0,
+    };
+
+    (requests || []).forEach((req) => {
+      statusCounts[req.status] += 1;
+    });
+
+    return {
+      total: requests?.length || 0,
+      statusCounts,
+    };
+  }, [requests]);
+
+  const filteredRequests = useMemo(() => {
+    const search = requestSearchTerm.trim().toLowerCase();
+    return (requests || []).filter((req) => {
+      if (requestStatusFilter !== 'all' && req.status !== requestStatusFilter) return false;
+      if (requestPriorityFilter !== 'all' && req.priority !== requestPriorityFilter) return false;
+
+      if (!search) return true;
+
+      const userRecord = userLookup.get(req.userId);
+      const userName = [userRecord?.firstName, userRecord?.lastName].filter(Boolean).join(' ').toLowerCase();
+      const userEmail = (userRecord?.email || '').toLowerCase();
+      const userUsername = (userRecord?.username || '').toLowerCase();
+
+      return [
+        req.subject,
+        req.description,
+        req.orderId,
+        req.type,
+        req._id,
+        userName,
+        userEmail,
+        userUsername,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase())
+        .some((value) => value.includes(search));
+    });
+  }, [requests, requestPriorityFilter, requestSearchTerm, requestStatusFilter, userLookup]);
+
+  const updateRequestMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<ServiceRequest, 'status' | 'priority' | 'response'>> }) => {
+      return await apiRequest(`/api/requests/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Request updated',
+        description: 'The service request has been updated successfully.',
+      });
+      refetchRequests();
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Failed to update request',
+        description: error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleRequestFieldChange = <K extends 'status' | 'priority' | 'response'>(requestId: string, field: K, value: ServiceRequest[K] | string) => {
+    setRequestEdits((prev) => ({
+      ...prev,
+      [requestId]: {
+        status: (field === 'status' ? value : prev[requestId]?.status || 'pending') as ServiceRequest['status'],
+        priority: (field === 'priority' ? value : prev[requestId]?.priority || 'medium') as ServiceRequest['priority'],
+        response: field === 'response' ? (value as string) : prev[requestId]?.response || '',
+      },
+    }));
+  };
+
+  const handleUpdateRequest = async (requestId: string) => {
+    const edits = requestEdits[requestId];
+    if (!edits) {
+      toast({
+        title: 'Nothing to update',
+        description: 'Please adjust the request details before saving.',
+      });
+      return;
+    }
+
+    setUpdatingRequestId(requestId);
+    try {
+      await updateRequestMutation.mutateAsync({
+        id: requestId,
+        data: {
+          status: edits.status,
+          priority: edits.priority,
+          response: edits.response,
+        },
+      });
+    } finally {
+      setUpdatingRequestId(null);
+    }
+  };
 
   // All forms declared at the top level
   const form = useForm<ProductFormData>({
@@ -1121,7 +1356,7 @@ export default function AdminPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-8 lg:w-auto lg:grid-cols-8 bg-white border border-gray-200">
+          <TabsList className="grid w-full grid-cols-10 lg:w-auto lg:grid-cols-10 bg-white border border-gray-200">
             <TabsTrigger value="orders" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <ShoppingCart className="w-4 h-4 mr-2" />
               Orders
@@ -1129,6 +1364,10 @@ export default function AdminPage() {
             <TabsTrigger value="users" className="data-[state=active]:bg-green-600 data-[state=active]:text-white">
               <Users className="w-4 h-4 mr-2" />
               Users
+            </TabsTrigger>
+            <TabsTrigger value="requests" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
+              <FileCheck className="w-4 h-4 mr-2" />
+              Track Requests
             </TabsTrigger>
             <TabsTrigger value="products" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
               <Package className="w-4 h-4 mr-2" />
@@ -1153,6 +1392,10 @@ export default function AdminPage() {
             <TabsTrigger value="graphics" className="data-[state=active]:bg-green-600 data-[state=active]:text-white">
               <ImageIcon className="w-4 h-4 mr-2" />
               Graphics
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+              <BarChart2 className="w-4 h-4 mr-2" />
+              Analytics
             </TabsTrigger>
           </TabsList>
 
@@ -1324,6 +1567,403 @@ export default function AdminPage() {
                 </Card>
               )}
             </div>
+          </TabsContent>
+
+          <TabsContent value="analytics" className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Business Analytics</h2>
+                <p className="text-gray-600">Key metrics and trends</p>
+              </div>
+            </div>
+
+            {isLoadingAnalytics && (
+              <div className="text-gray-600">Loading...</div>
+            )}
+            {analyticsError && (
+              <div className="text-red-600">
+                {(analyticsError as Error)?.message || 'Failed to load. Please try again later.'}
+              </div>
+            )}
+
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-gradient-to-br from-white to-gray-50 rounded-lg border p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-gray-600">Total users</div>
+                      <div className="mt-1 text-3xl font-semibold text-gray-900">{analyticsData?.summary?.totalUsers ?? 0}</div>
+                    </div>
+                    <div className="h-10 w-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                      <Users className="h-5 w-5" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-white to-gray-50 rounded-lg border p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-gray-600">Total products</div>
+                      <div className="mt-1 text-3xl font-semibold text-gray-900">{analyticsData?.summary?.totalProducts ?? 0}</div>
+                    </div>
+                    <div className="h-10 w-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
+                      <Package className="h-5 w-5" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-white to-gray-50 rounded-lg border p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-gray-600">Total orders</div>
+                      <div className="mt-1 text-3xl font-semibold text-gray-900">{analyticsData?.summary?.totalOrders ?? 0}</div>
+                    </div>
+                    <div className="h-10 w-10 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center">
+                      <ShoppingCart className="h-5 w-5" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-white to-gray-50 rounded-lg border p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-gray-600">Total revenue</div>
+                      <div className="mt-1 text-3xl font-semibold text-gray-900">${(analyticsData?.summary?.totalRevenue ?? 0).toFixed?.(2) ?? analyticsData?.summary?.totalRevenue ?? 0}</div>
+                    </div>
+                    <div className="h-10 w-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <DollarSign className="h-5 w-5" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg border p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-gray-900">Revenue (last 30 days)</h3>
+                  </div>
+                  <ChartContainer
+                    config={{
+                      revenue: { label: 'Revenue', color: '#22c55e' },
+                    }}
+                    className="h-72"
+                  >
+                    <RechartsLineChart data={analyticsData?.daily || []}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Line type="monotone" dataKey="revenue" stroke="var(--color-revenue)" strokeWidth={2} dot={false} />
+                    </RechartsLineChart>
+                  </ChartContainer>
+                </div>
+
+                <div className="bg-white rounded-lg border p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-gray-900">Orders (last 30 days)</h3>
+                  </div>
+                  <ChartContainer
+                    config={{
+                      orders: { label: 'Orders', color: '#0ea5e9' },
+                    }}
+                    className="h-72"
+                  >
+                    <RechartsBarChart data={analyticsData?.daily || []}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="orders" fill="var(--color-orders)" radius={[4, 4, 0, 0]} />
+                    </RechartsBarChart>
+                  </ChartContainer>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg border p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">Top 5 best sellers</h3>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    {(analyticsData?.topProducts || []).map((p: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between border rounded-md p-3 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          {p.image ? (
+                            <img src={p.image} alt={p.name} className="w-10 h-10 rounded object-cover border" />
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-gray-100 border" />
+                          )}
+                          <div>
+                            <div className="font-medium text-gray-900">{p.name}</div>
+                            <div className="text-sm text-gray-600">Sold: {p.quantity}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm text-gray-600">Revenue</div>
+                          <div className="font-semibold text-gray-900">${(p.revenue ?? 0).toFixed?.(2) ?? p.revenue ?? 0}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <ChartContainer config={{}} className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPieChart>
+                        <Pie
+                          data={(analyticsData?.topProducts || []).map((p: any) => ({ name: p.name, value: p.quantity }))}
+                          dataKey="value"
+                          nameKey="name"
+                          outerRadius={90}
+                          innerRadius={40}
+                          label
+                        >
+                          {(analyticsData?.topProducts || []).map((_: any, index: number) => (
+                            <Cell key={index} fill={['#10b981', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6'][index % 5]} />
+                          ))}
+                        </Pie>
+                        <ChartTooltip />
+                        <ChartLegend content={<ChartLegendContent />} />
+                      </RechartsPieChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Requests Tab */}
+          <TabsContent value="requests" className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Service Requests</h2>
+                <p className="text-gray-600">Manage customer inquiries, complaints, and special requests.</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              <Card className="border border-indigo-100 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-indigo-600 uppercase tracking-wide">Total</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <p className="text-3xl font-bold text-gray-900">{requestStats.total}</p>
+                </CardContent>
+              </Card>
+              <Card className="border border-yellow-100 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-yellow-600 uppercase tracking-wide">Pending</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <p className="text-3xl font-bold text-gray-900">{requestStats.statusCounts.pending}</p>
+                </CardContent>
+              </Card>
+              <Card className="border border-blue-100 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-blue-600 uppercase tracking-wide">In Progress</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <p className="text-3xl font-bold text-gray-900">{requestStats.statusCounts.in_progress}</p>
+                </CardContent>
+              </Card>
+              <Card className="border border-green-100 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-green-600 uppercase tracking-wide">Resolved</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <p className="text-3xl font-bold text-gray-900">{requestStats.statusCounts.resolved}</p>
+                </CardContent>
+              </Card>
+              <Card className="border border-gray-200 bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Closed</CardTitle>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <p className="text-3xl font-bold text-gray-900">{requestStats.statusCounts.closed}</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+              <div className="relative flex-1 w-full">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Search by subject, user, type, or order ID..."
+                  value={requestSearchTerm}
+                  onChange={(e) => setRequestSearchTerm(e.target.value)}
+                  className="pl-10 bg-white border-gray-300 text-black placeholder:text-gray-500"
+                />
+              </div>
+              <Select value={requestStatusFilter} onValueChange={(value) => setRequestStatusFilter(value as typeof requestStatusFilter)}>
+                <SelectTrigger className="w-full lg:w-48 bg-white border-gray-300 text-black">
+                  <SelectValue placeholder="Filter by status" className="text-black" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border border-gray-300">
+                  <SelectItem value="all" className="text-black hover:bg-gray-100">All Statuses</SelectItem>
+                  <SelectItem value="pending" className="text-black hover:bg-gray-100">Pending</SelectItem>
+                  <SelectItem value="in_progress" className="text-black hover:bg-gray-100">In Progress</SelectItem>
+                  <SelectItem value="resolved" className="text-black hover:bg-gray-100">Resolved</SelectItem>
+                  <SelectItem value="closed" className="text-black hover:bg-gray-100">Closed</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={requestPriorityFilter} onValueChange={(value) => setRequestPriorityFilter(value as typeof requestPriorityFilter)}>
+                <SelectTrigger className="w-full lg:w-48 bg-white border-gray-300 text-black">
+                  <SelectValue placeholder="Filter by priority" className="text-black" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border border-gray-300">
+                  <SelectItem value="all" className="text-black hover:bg-gray-100">All Priorities</SelectItem>
+                  <SelectItem value="high" className="text-black hover:bg-gray-100">High</SelectItem>
+                  <SelectItem value="medium" className="text-black hover:bg-gray-100">Medium</SelectItem>
+                  <SelectItem value="low" className="text-black hover:bg-gray-100">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {isLoadingRequests ? (
+              <Card className="py-12 text-center">
+                <CardContent>
+                  <p className="text-gray-600">Loading service requests...</p>
+                </CardContent>
+              </Card>
+            ) : filteredRequests.length === 0 ? (
+              <Card className="py-12 text-center">
+                <CardContent>
+                  <FileCheck className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No matching requests</h3>
+                  <p className="text-gray-600">Adjust your filters or check back later for new customer requests.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {filteredRequests.map((req) => {
+                  const userRecord = userLookup.get(req.userId) as any;
+                  const userName = [userRecord?.firstName, userRecord?.lastName].filter(Boolean).join(' ') || userRecord?.username || 'Unknown user';
+                  const userEmail = userRecord?.email || 'No email provided';
+                  const userPhone = userRecord?.phone || 'No phone provided';
+                  const edits = requestEdits[req._id] || {
+                    status: req.status,
+                    priority: req.priority,
+                    response: req.response ?? '',
+                  };
+                  return (
+                    <Card key={req._id} className="hover:shadow-lg transition-shadow border border-gray-200 bg-white">
+                      <CardHeader>
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <CardTitle className="text-lg font-semibold text-gray-900">{req.subject}</CardTitle>
+                              <Badge variant="outline" className={`border ${REQUEST_STATUS_BADGES[edits.status]}`}>
+                                {REQUEST_STATUS_LABELS[edits.status as ServiceRequest['status']]}
+                              </Badge>
+                              <Badge variant="outline" className={`border ${REQUEST_PRIORITY_BADGES[edits.priority]}`}>
+                                Priority: {REQUEST_PRIORITY_LABELS[edits.priority]}
+                              </Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-3 text-sm text-gray-600">
+                              <span className="font-medium text-gray-900">
+                                Type:
+                                {' '}
+                                {REQUEST_TYPE_LABELS[req.type]}
+                              </span>
+                              <span>
+                                Created:
+                                {' '}
+                                {new Date(req.createdAt).toLocaleString()}
+                              </span>
+                              {req.orderId && (
+                                <span>
+                                  Related Order:
+                                  {' '}
+                                  <Badge variant="outline" className="border border-blue-200 text-blue-700 bg-blue-50">
+                                    #{req.orderId}
+                                  </Badge>
+                                </span>
+                              )}
+                              <span>
+                                Request ID:
+                                {' '}
+                                <code className="text-xs bg-gray-100 px-2 py-0.5 rounded border border-gray-200">{req._id}</code>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-md p-3">
+                            <p className="font-semibold text-gray-900 mb-1">Customer Details</p>
+                            <p><span className="text-gray-700">Name:</span> {userName}</p>
+                            <p><span className="text-gray-700">Email:</span> {userEmail}</p>
+                            <p><span className="text-gray-700">Phone:</span> {userPhone}</p>
+                            <p><span className="text-gray-700">User ID:</span> {req.userId}</p>
+                          </div>
+                        </div>
+                        <div className="pt-4">
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{req.description}</p>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div className="space-y-2">
+                            <Label htmlFor={`request-status-${req._id}`} className="text-sm font-medium text-gray-700">Update Status</Label>
+                            <Select value={edits.status} onValueChange={(value) => handleRequestFieldChange(req._id, 'status', value as ServiceRequest['status'])}>
+                              <SelectTrigger id={`request-status-${req._id}`} className="bg-white border-gray-300 text-black">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-white border border-gray-300">
+                                <SelectItem value="pending" className="text-black hover:bg-gray-100">Pending</SelectItem>
+                                <SelectItem value="in_progress" className="text-black hover:bg-gray-100">In Progress</SelectItem>
+                                <SelectItem value="resolved" className="text-black hover:bg-gray-100">Resolved</SelectItem>
+                                <SelectItem value="closed" className="text-black hover:bg-gray-100">Closed</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`request-priority-${req._id}`} className="text-sm font-medium text-gray-700">Update Priority</Label>
+                            <Select value={edits.priority} onValueChange={(value) => handleRequestFieldChange(req._id, 'priority', value as ServiceRequest['priority'])}>
+                              <SelectTrigger id={`request-priority-${req._id}`} className="bg-white border-gray-300 text-black">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-white border border-gray-300">
+                                <SelectItem value="high" className="text-black hover:bg-gray-100">High</SelectItem>
+                                <SelectItem value="medium" className="text-black hover:bg-gray-100">Medium</SelectItem>
+                                <SelectItem value="low" className="text-black hover:bg-gray-100">Low</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-700">Last Updated</Label>
+                            <p className="text-sm text-gray-600 bg-gray-100 border border-gray-200 rounded-md px-3 py-2">{new Date(req.updatedAt).toLocaleString()}</p>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`request-response-${req._id}`} className="text-sm font-medium text-gray-700">Internal Notes / Response</Label>
+                          <Textarea
+                            id={`request-response-${req._id}`}
+                            value={edits.response}
+                            onChange={(event) => handleRequestFieldChange(req._id, 'response', event.target.value)}
+                            placeholder="Document your follow-up steps or paste the response sent to the customer."
+                            className="min-h-[120px] bg-white border-gray-300 text-black placeholder:text-gray-500"
+                          />
+                          {req.response && req.response !== edits.response && (
+                            <p className="text-xs text-gray-500">
+                              Previous saved response:
+                              {' '}
+                              <span className="font-medium text-gray-700">{req.response}</span>
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <p className="text-xs text-gray-500">
+                            Created {new Date(req.createdAt).toLocaleString()} • Last updated {new Date(req.updatedAt).toLocaleString()}
+                          </p>
+                          <Button
+                            onClick={() => handleUpdateRequest(req._id)}
+                            disabled={updatingRequestId === req._id || updateRequestMutation.isPending}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                          >
+                            <Save className="w-4 h-4 mr-2" />
+                            {updatingRequestId === req._id && updateRequestMutation.isPending ? 'Saving...' : 'Save Changes'}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
 
           {/* Users Tab */}
@@ -1505,7 +2145,11 @@ export default function AdminPage() {
                                       {user.membership.tier}
                                     </Badge>
                                     <div className="text-xs text-gray-500 mt-1">
-                                      Expires: {new Date(user.membership.expiryDate).toLocaleDateString()}
+                                      {(() => {
+                                        const expiry = new Date(user.membership.expiryDate);
+                                        const isLifetime = (user as any).membership?.lifetime === true || expiry.getFullYear() >= 9999;
+                                        return `Expires: ${isLifetime ? 'Lifetime' : expiry.toLocaleDateString()}`;
+                                      })()}
                                     </div>
                                   </div>
                                 ) : (

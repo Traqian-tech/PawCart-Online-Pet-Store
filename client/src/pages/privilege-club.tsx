@@ -100,7 +100,10 @@ export default function PrivilegeClubPage() {
       return;
     }
 
-    if (currentMembership) {
+    // Check if user has an active (non-expired) membership
+    const hasActiveMembership = currentMembership && new Date(currentMembership.expiryDate) > new Date();
+    
+    if (hasActiveMembership) {
       toast({
         title: "Active membership",
         description: "You already have an active membership.",
@@ -110,10 +113,12 @@ export default function PrivilegeClubPage() {
     }
 
     // Create membership order directly (skip cart)
+    const numericPrice = parseFloat(price.replace('$', ''));
+    const isDiamondLifetime = tierName === 'Diamond Paw' && numericPrice >= 500;
     const membershipOrder = {
       tier: tierName,
-      price: parseFloat(price.replace('$', '')),
-      duration: 30 // 30 days
+      price: numericPrice,
+      duration: isDiamondLifetime ? 0 : 30 // 0 => lifetime, else 30 days
     };
 
     // Store in sessionStorage for checkout
@@ -143,7 +148,11 @@ export default function PrivilegeClubPage() {
                   <div>
                     <h3 className="text-2xl font-bold mb-2">Active Membership: {currentMembership.tier}</h3>
                     <p className="opacity-90">
-                      Expires on: {new Date(currentMembership.expiryDate).toLocaleDateString()}
+                      {(() => {
+                        const expiry = new Date(currentMembership.expiryDate);
+                        const isLifetime = (currentMembership as any).lifetime === true || expiry.getFullYear() >= 9999;
+                        return `Expires on: ${isLifetime ? 'Lifetime' : expiry.toLocaleDateString()}`;
+                      })()}
                     </p>
                   </div>
                   <div className="text-right">
@@ -183,6 +192,10 @@ export default function PrivilegeClubPage() {
           <div className="grid md:grid-cols-3 gap-1">
             {membershipTiers.map((tier) => {
               const IconComponent = tier.icon;
+              const isCurrentActivePlan = currentMembership?.tier === tier.name && 
+                                         currentMembership?.expiryDate && 
+                                         new Date(currentMembership.expiryDate) > new Date();
+              
               return (
                 <Card 
                   key={tier.name}
@@ -220,17 +233,17 @@ export default function PrivilegeClubPage() {
 
                     <Button 
                       className={`w-full mt-6 text-white ${
-                        currentMembership?.tier === tier.name
+                        isCurrentActivePlan
                           ? 'bg-blue-600 hover:bg-blue-700'
                           : tier.popular 
                           ? 'bg-green-600 hover:bg-green-700' 
                           : 'bg-gray-900 hover:bg-gray-800'
                       }`}
                       onClick={() => handlePurchase(tier.name, tier.price)}
-                      disabled={currentMembership?.tier === tier.name}
+                      disabled={isCurrentActivePlan}
                       data-testid={`button-select-${tier.name.toLowerCase().replace(' ', '-')}`}
                     >
-                      {currentMembership?.tier === tier.name ? 'Current Plan' : 'Purchase Now'}
+                      {isCurrentActivePlan ? 'Current Plan' : 'Purchase Now'}
                     </Button>
                   </CardContent>
                 </Card>

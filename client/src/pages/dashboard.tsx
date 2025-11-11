@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
 import { useLocation, Link } from 'wouter'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
+import { ImageUpload } from '@/components/ui/image-upload'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { useForm } from 'react-hook-form'
@@ -84,8 +86,20 @@ import {
   AlertTriangle,
   XCircle,
   Search,
-  Info
+  Info,
+  Stethoscope,
+  Weight,
+  Thermometer,
+  ClipboardList,
+  ClipboardCheck,
+  CalendarClock,
+  CheckSquare
 } from 'lucide-react'
+import { format as formatDate } from 'date-fns'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import { PetCard } from '@/components/pets/PetCard'
+import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts'
 
 interface Order {
   id: string
@@ -140,6 +154,79 @@ interface UserStats {
   requestedProducts: number
 }
 
+interface Pet {
+  _id: string
+  userId: string
+  name: string
+  species: 'cat' | 'dog' | 'rabbit' | 'bird' | 'hamster' | 'other'
+  breed?: string
+  age?: number
+  weight?: number
+  gender?: 'male' | 'female' | 'unknown'
+  photo?: string
+  birthday?: string
+  healthStatus?: 'excellent' | 'good' | 'fair' | 'poor'
+  healthNotes?: string
+  specialNeeds?: string[]
+  preferences?: {
+    foodType?: string[]
+    activityLevel?: 'low' | 'medium' | 'high'
+    favoriteToys?: string[]
+  }
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+  nextBirthday?: Date
+  daysUntil?: number
+}
+
+type CarePlanCategory = 'nutrition' | 'exercise' | 'grooming' | 'medication' | 'wellness' | 'other'
+type CarePlanFrequency = 'once' | 'daily' | 'weekly' | 'monthly' | 'custom'
+
+interface PetHealthRecord {
+  _id: string
+  petId: string
+  userId: string
+  recordType: 'vaccination' | 'checkup' | 'medication' | 'surgery' | 'grooming' | 'other'
+  title: string
+  description?: string
+  date: string
+  veterinarian?: string
+  location?: string
+  cost?: number
+  attachments?: string[]
+  nextDueDate?: string
+  notes?: string
+  weight?: number
+  temperature?: number
+  healthScore?: number
+  createdAt: string
+  updatedAt: string
+}
+
+interface PetCarePlan {
+  _id: string
+  petId: string
+  userId: string
+  title: string
+  description?: string
+  category: CarePlanCategory
+  frequency: CarePlanFrequency
+  customIntervalDays?: number
+  startDate: string
+  nextDueDate?: string
+  remindersEnabled: boolean
+  reminderLeadDays?: number
+  status: 'upcoming' | 'completed' | 'overdue'
+  lastCompletedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+type HealthReminder =
+  | (PetHealthRecord & { reminderType: 'healthRecord' })
+  | (PetCarePlan & { reminderType: 'carePlan'; recordType: 'care-plan' })
+
 const profileFormSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
@@ -156,8 +243,57 @@ const passwordChangeSchema = z.object({
   path: ["confirmPassword"],
 });
 
+const petFormSchema = z.object({
+  name: z.string().min(1, 'Pet name is required'),
+  species: z.enum(['cat', 'dog', 'rabbit', 'bird', 'hamster', 'other']),
+  breed: z.string().optional(),
+  age: z.number().min(0).max(300).optional(),
+  weight: z.number().min(0).max(200).optional(),
+  gender: z.enum(['male', 'female', 'unknown']).optional(),
+  photo: z.string().optional(),
+  birthday: z.string().optional(),
+  healthStatus: z.enum(['excellent', 'good', 'fair', 'poor']).optional(),
+  healthNotes: z.string().optional(),
+  specialNeeds: z.string().optional(),
+});
+
+const healthRecordFormSchema = z.object({
+  recordType: z.enum(['vaccination', 'checkup', 'medication', 'surgery', 'grooming', 'other']),
+  title: z.string().min(1, 'Title is required'),
+  description: z.string().optional(),
+  date: z.string().min(1, 'Date is required'),
+  veterinarian: z.string().optional(),
+  location: z.string().optional(),
+  cost: z.number().min(0).optional(),
+  nextDueDate: z.string().optional(),
+  notes: z.string().optional(),
+  weight: z.number().min(0).max(200).optional(),
+  temperature: z.number().min(20).max(45).optional(),
+  healthScore: z.number().min(0).max(100).optional(),
+});
+
+const carePlanFormSchema = z.object({
+  title: z.string().min(1, 'Title is required'),
+  description: z.string().optional(),
+  category: z.enum(['nutrition', 'exercise', 'grooming', 'medication', 'wellness', 'other']),
+  frequency: z.enum(['once', 'daily', 'weekly', 'monthly', 'custom']),
+  customIntervalDays: z.number().min(1).max(365).optional(),
+  startDate: z.string().min(1, 'Start date is required'),
+  reminderLeadDays: z.number().min(0).max(30).optional(),
+  remindersEnabled: z.boolean().optional(),
+}).refine(
+  (data) => data.frequency !== 'custom' || (data.customIntervalDays !== undefined && data.customIntervalDays !== null),
+  {
+    message: 'Please provide an interval in days',
+    path: ['customIntervalDays'],
+  }
+);
+
 type ProfileFormData = z.infer<typeof profileFormSchema>;
 type PasswordChangeData = z.infer<typeof passwordChangeSchema>;
+type PetFormData = z.infer<typeof petFormSchema>;
+type HealthRecordFormData = z.infer<typeof healthRecordFormSchema>;
+type CarePlanFormData = z.infer<typeof carePlanFormSchema>;
 
 export default function DashboardPage() {
   const { user, signOut, updateProfile, refreshUser, authMethod } = useAuth()
@@ -182,12 +318,515 @@ export default function DashboardPage() {
   const { format } = useCurrency()
   const { addItem: addToCart } = useCart()
   const { wallet, isLoading: isWalletLoading } = useWallet()
+  const queryClient = useQueryClient()
+  
+  // Pets state
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isHealthRecordDialogOpen, setIsHealthRecordDialogOpen] = useState(false)
+  const [isHealthOverviewOpen, setIsHealthOverviewOpen] = useState(false)
+  const [isCarePlanDialogOpen, setIsCarePlanDialogOpen] = useState(false)
+  const [selectedPet, setSelectedPet] = useState<Pet | null>(null)
+  const [activeTab, setActiveTab] = useState('pets')
+  
+  // Fetch pets
+  const { data: petsData, isLoading: isLoadingPets } = useQuery({
+    queryKey: ['/api/pets'],
+    enabled: !!user,
+    retry: 1,
+  })
+  
+  const pets: Pet[] = petsData?.pets || []
+  
+  // Birthdays removed in redesign
+  
+  // Fetch health reminders
+  const { data: remindersData } = useQuery<{ reminders: HealthReminder[] }>({
+    queryKey: ['/api/pets/health-reminders?days=30'],
+    enabled: !!user && pets.length > 0,
+  })
+  
+  const healthReminders: HealthReminder[] = remindersData?.reminders || []
+  
+  // Pet form
+  const petForm = useForm<PetFormData>({
+    resolver: zodResolver(petFormSchema),
+    defaultValues: {
+      name: '',
+      species: 'cat',
+      breed: '',
+      age: undefined,
+      weight: undefined,
+      gender: 'unknown',
+      photo: '',
+      birthday: '',
+      healthStatus: 'good',
+      healthNotes: '',
+      specialNeeds: '',
+    },
+  })
+  
+  // Health record form
+  const healthRecordForm = useForm<HealthRecordFormData>({
+    resolver: zodResolver(healthRecordFormSchema),
+    defaultValues: {
+      recordType: 'checkup',
+      title: '',
+      description: '',
+      date: formatDate(new Date(), 'yyyy-MM-dd'),
+      veterinarian: '',
+      location: '',
+      cost: undefined,
+      nextDueDate: '',
+      notes: '',
+      weight: undefined,
+      temperature: undefined,
+      healthScore: undefined,
+    },
+  })
+
+  // Care plan form
+  const carePlanForm = useForm<CarePlanFormData>({
+    resolver: zodResolver(carePlanFormSchema),
+    defaultValues: {
+      title: '',
+      description: '',
+      category: 'wellness',
+      frequency: 'once',
+      customIntervalDays: undefined,
+      startDate: formatDate(new Date(), 'yyyy-MM-dd'),
+      reminderLeadDays: 1,
+      remindersEnabled: true,
+    },
+  })
+
+  const carePlanFrequency = carePlanForm.watch('frequency')
+  const carePlanRemindersEnabled = carePlanForm.watch('remindersEnabled')
+
+  const selectedPetId = selectedPet?._id
+
+  const { data: healthRecordsData, isLoading: isLoadingHealthRecords } = useQuery<{ records: PetHealthRecord[] }>({
+    queryKey: ['pet-health-records', selectedPetId],
+    enabled: isHealthOverviewOpen && !!selectedPetId,
+    queryFn: async () => {
+      if (!selectedPetId) return { records: [] }
+      const response = await fetch(`/api/pets/${selectedPetId}/health-records`, {
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        throw new Error('Failed to fetch health records')
+      }
+      return response.json()
+    },
+  })
+
+  const healthRecords: PetHealthRecord[] = healthRecordsData?.records || []
+
+  const { data: carePlansData, isLoading: isLoadingCarePlans } = useQuery<{ plans: PetCarePlan[] }>({
+    queryKey: ['pet-care-plans', selectedPetId],
+    enabled: isHealthOverviewOpen && !!selectedPetId,
+    queryFn: async () => {
+      if (!selectedPetId) return { plans: [] }
+      const response = await fetch(`/api/pets/${selectedPetId}/care-plans`, {
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        throw new Error('Failed to fetch care plans')
+      }
+      return response.json()
+    },
+  })
+
+  const carePlans: PetCarePlan[] = carePlansData?.plans || []
+
+  const healthChartConfig = useMemo(
+    () => ({
+      weight: {
+        label: 'Weight (kg)',
+        color: '#22c55e',
+      },
+      healthScore: {
+        label: 'Health Score',
+        color: '#0ea5e9',
+      },
+      temperature: {
+        label: 'Temperature (°C)',
+        color: '#f97316',
+      },
+    }),
+    []
+  )
+
+  const healthMetricChartData = useMemo(() => {
+    if (!healthRecords.length) {
+      return []
+    }
+
+    return [...healthRecords]
+      .filter(
+        (record) =>
+          record.weight !== undefined ||
+          record.healthScore !== undefined ||
+          record.temperature !== undefined
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.date).getTime() - new Date(b.date).getTime()
+      )
+      .map((record) => ({
+        label: formatDate(new Date(record.date), 'MMM d'),
+        date: record.date,
+        weight: record.weight ?? null,
+        healthScore: record.healthScore ?? null,
+        temperature: record.temperature ?? null,
+      }))
+  }, [healthRecords])
+
+  const hasWeightData = useMemo(
+    () => healthMetricChartData.some((entry) => entry.weight !== null),
+    [healthMetricChartData]
+  )
+  const hasScoreData = useMemo(
+    () => healthMetricChartData.some((entry) => entry.healthScore !== null),
+    [healthMetricChartData]
+  )
+  const hasTemperatureData = useMemo(
+    () => healthMetricChartData.some((entry) => entry.temperature !== null),
+    [healthMetricChartData]
+  )
+
+  const latestHealthRecord = useMemo(() => {
+    if (!healthRecords.length) return undefined
+    return [...healthRecords].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    )[0]
+  }, [healthRecords])
+
+  const activeCarePlans = useMemo(
+    () => carePlans.filter((plan) => plan.status !== 'completed'),
+    [carePlans]
+  )
+
+  const completedCarePlans = useMemo(
+    () => carePlans.filter((plan) => plan.status === 'completed'),
+    [carePlans]
+  )
+  
+  // Create pet mutation
+  const createPetMutation = useMutation({
+    mutationFn: async (data: PetFormData) => {
+      // Check if user is logged in
+      if (!user) {
+        throw new Error('You must be logged in to create a pet profile')
+      }
+      
+      // Prepare pet data, cleaning up undefined values and handling specialNeeds
+      const petData: any = {
+        name: data.name,
+        species: data.species,
+        gender: data.gender || 'unknown',
+      }
+      
+      // Add optional fields only if they have values
+      if (data.breed) petData.breed = data.breed
+      if (data.age !== undefined && data.age !== null) petData.age = data.age
+      if (data.weight !== undefined && data.weight !== null) petData.weight = data.weight
+      if (data.photo) petData.photo = data.photo
+      if (data.birthday) petData.birthday = data.birthday
+      if (data.healthStatus) petData.healthStatus = data.healthStatus
+      if (data.healthNotes) petData.healthNotes = data.healthNotes
+      
+      // Handle specialNeeds safely
+      if (data.specialNeeds && typeof data.specialNeeds === 'string' && data.specialNeeds.trim()) {
+        petData.specialNeeds = data.specialNeeds.split(',').map(s => s.trim()).filter(Boolean)
+      } else {
+        petData.specialNeeds = []
+      }
+      
+      const response = await fetch('/api/pets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(petData),
+      })
+      
+      if (!response.ok) {
+        // Handle 401 Unauthorized specifically
+        if (response.status === 401) {
+          toast({
+            title: 'Session Expired',
+            description: 'Please sign in again to continue',
+            variant: 'destructive',
+          })
+          // Redirect to sign-in after a short delay
+          setTimeout(() => {
+            setLocation('/sign-in')
+          }, 1500)
+          throw new Error('Your session has expired. Please sign in again.')
+        }
+        
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `Failed to create pet: ${response.statusText}`)
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/pets'] })
+      toast({
+        title: 'Success! 🎉',
+        description: 'Pet profile created successfully',
+      })
+      setIsAddDialogOpen(false)
+      petForm.reset()
+    },
+    onError: (error: Error) => {
+      // Only show toast if it's not a 401 (already handled above)
+      if (!error.message.includes('session has expired')) {
+        toast({
+          title: 'Error',
+          description: error.message || 'Failed to create pet profile',
+          variant: 'destructive',
+        })
+      }
+    },
+  })
+  
+  // Update pet mutation
+  const updatePetMutation = useMutation({
+    mutationFn: async ({ petId, data }: { petId: string; data: PetFormData }) => {
+      // Check if user is logged in
+      if (!user) {
+        throw new Error('You must be logged in to update a pet profile')
+      }
+      
+      // Prepare pet data, cleaning up undefined values and handling specialNeeds
+      const petData: any = {
+        name: data.name,
+        species: data.species,
+        gender: data.gender || 'unknown',
+      }
+      
+      // Add optional fields only if they have values
+      if (data.breed) petData.breed = data.breed
+      if (data.age !== undefined && data.age !== null) petData.age = data.age
+      if (data.weight !== undefined && data.weight !== null) petData.weight = data.weight
+      if (data.photo) petData.photo = data.photo
+      if (data.birthday) petData.birthday = data.birthday
+      if (data.healthStatus) petData.healthStatus = data.healthStatus
+      if (data.healthNotes) petData.healthNotes = data.healthNotes
+      
+      // Handle specialNeeds safely
+      if (data.specialNeeds && typeof data.specialNeeds === 'string' && data.specialNeeds.trim()) {
+        petData.specialNeeds = data.specialNeeds.split(',').map(s => s.trim()).filter(Boolean)
+      } else {
+        petData.specialNeeds = []
+      }
+      
+      const response = await fetch(`/api/pets/${petId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(petData),
+      })
+      
+      if (!response.ok) {
+        // Handle 401 Unauthorized specifically
+        if (response.status === 401) {
+          toast({
+            title: 'Session Expired',
+            description: 'Please sign in again to continue',
+            variant: 'destructive',
+          })
+          // Redirect to sign-in after a short delay
+          setTimeout(() => {
+            setLocation('/sign-in')
+          }, 1500)
+          throw new Error('Your session has expired. Please sign in again.')
+        }
+        
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `Failed to update pet: ${response.statusText}`)
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/pets'] })
+      toast({
+        title: 'Success! 🎉',
+        description: 'Pet profile updated successfully',
+      })
+      setIsEditDialogOpen(false)
+      setSelectedPet(null)
+      petForm.reset()
+    },
+    onError: (error: Error) => {
+      // Only show toast if it's not a 401 (already handled above)
+      if (!error.message.includes('session has expired')) {
+        toast({
+          title: 'Error',
+          description: error.message || 'Failed to update pet profile',
+          variant: 'destructive',
+        })
+      }
+    },
+  })
+  
+  // Delete pet mutation
+  const deletePetMutation = useMutation({
+    mutationFn: async (petId: string) => {
+      const response = await fetch(`/api/pets/${petId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error('Failed to delete pet')
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/pets'] })
+      toast({
+        title: 'Success',
+        description: 'Pet profile deleted successfully',
+      })
+    },
+    onError: () => {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete pet profile',
+        variant: 'destructive',
+      })
+    },
+  })
+  
+  // Create health record mutation
+  const createHealthRecordMutation = useMutation({
+    mutationFn: async ({ petId, data }: { petId: string; data: HealthRecordFormData }) => {
+      const response = await fetch(`/api/pets/${petId}/health-records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      })
+      if (!response.ok) throw new Error('Failed to create health record')
+      return response.json()
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/pets'] })
+      queryClient.invalidateQueries({ queryKey: ['/api/pets/health-reminders?days=30'] })
+      queryClient.invalidateQueries({ queryKey: ['pet-health-records', variables.petId] })
+      toast({
+        title: 'Success! 🎉',
+        description: 'Health record created successfully',
+      })
+      setIsHealthRecordDialogOpen(false)
+      healthRecordForm.reset()
+    },
+    onError: () => {
+      toast({
+        title: 'Error',
+        description: 'Failed to create health record',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const createCarePlanMutation = useMutation({
+    mutationFn: async ({ petId, data }: { petId: string; data: CarePlanFormData }) => {
+      const response = await fetch(`/api/pets/${petId}/care-plans`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      })
+      if (!response.ok) throw new Error('Failed to create care plan')
+      return response.json()
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['pet-care-plans', variables.petId] })
+      queryClient.invalidateQueries({ queryKey: ['/api/pets/health-reminders?days=30'] })
+      toast({
+        title: 'Care plan added',
+        description: 'New care plan scheduled successfully',
+      })
+      setIsCarePlanDialogOpen(false)
+      carePlanForm.reset({
+        title: '',
+        description: '',
+        category: 'wellness',
+        frequency: 'once',
+        customIntervalDays: undefined,
+        startDate: formatDate(new Date(), 'yyyy-MM-dd'),
+        reminderLeadDays: 1,
+        remindersEnabled: true,
+      })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create care plan',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const deleteCarePlanMutation = useMutation({
+    mutationFn: async ({ petId, planId }: { petId: string; planId: string }) => {
+      const response = await fetch(`/api/pets/${petId}/care-plans/${planId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error('Failed to delete care plan')
+      return response.json()
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['pet-care-plans', variables.petId] })
+      queryClient.invalidateQueries({ queryKey: ['/api/pets/health-reminders?days=30'] })
+      toast({
+        title: 'Care plan removed',
+        description: 'The care plan has been deleted',
+      })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete care plan',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const completeCarePlanMutation = useMutation({
+    mutationFn: async ({ petId, planId }: { petId: string; planId: string }) => {
+      const response = await fetch(`/api/pets/${petId}/care-plans/${planId}/complete`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error('Failed to update care plan')
+      return response.json()
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['pet-care-plans', variables.petId] })
+      queryClient.invalidateQueries({ queryKey: ['/api/pets/health-reminders?days=30'] })
+      toast({
+        title: 'Care plan updated',
+        description: 'Care plan progress recorded',
+      })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update care plan',
+        variant: 'destructive',
+      })
+    },
+  })
 
   // Read section from URL parameter on mount and when location changes
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const sectionParam = urlParams.get('section')
-    if (sectionParam && ['dashboard', 'orders', 'profile', 'wishlist', 'requests', 'address', 'wallet', 'coupons', 'rewards', 'refer', 'newsletter', 'savings'].includes(sectionParam)) {
+    if (sectionParam && ['dashboard', 'orders', 'profile', 'wishlist', 'requests', 'address', 'wallet', 'pets', 'coupons', 'rewards', 'refer', 'newsletter', 'savings'].includes(sectionParam)) {
       setActiveSection(sectionParam)
     }
   }, [location])
@@ -453,12 +1092,17 @@ export default function DashboardPage() {
 
   // Fetch user orders and invoices
   useEffect(() => {
-    // Get userId safely (try multiple possible fields) - same logic as checkout.tsx
-    const userId = (user as any)?._id || (user as any)?.id || user?.id;
-    if (userId) {
+    // Helper: get a canonical userId consistently across app
+    const getCanonicalUserId = (u: any) =>
+      String(u?._id || u?.id || u?.userId || '');
+    const primaryUserId = getCanonicalUserId(user as any);
+    // Fallback: alternate id some earlier flows might have used
+    const altUserId = String((user as any)?.id || (user as any)?.userId || '');
+
+    if (primaryUserId) {
       // Fetch orders
-      console.log('Fetching orders for user:', userId);
-      fetch(`/api/orders/user/${userId}`)
+      console.log('Fetching orders for user:', primaryUserId);
+      fetch(`/api/orders/user/${primaryUserId}`)
         .then(res => res.json())
         .then(orders => {
           console.log('Fetched orders:', orders);
@@ -475,25 +1119,55 @@ export default function DashboardPage() {
         })
         .catch(err => console.error('Failed to fetch orders:', err))
 
-      // Fetch requests
-      fetch(`/api/requests/user/${userId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            setRequests(data)
-          }
+      // Fetch requests (robust: try both primary and alternate userId if they differ)
+      const requestsPromises: Promise<any[]>[] = [
+        fetch(`/api/requests/user/${primaryUserId}`).then(res => res.ok ? res.json() : []),
+      ];
+      if (altUserId && altUserId !== primaryUserId) {
+        requestsPromises.push(
+          fetch(`/api/requests/user/${altUserId}`).then(res => res.ok ? res.json() : [])
+        );
+      }
+      Promise.all(requestsPromises)
+        .then(([primaryList = [], altList = []]) => {
+          const combined = [...(primaryList || []), ...(altList || [])];
+          // Deduplicate by request _id
+          const uniqueById = Array.from(
+            new Map(combined.map((r: any) => [r._id, r])).values()
+          );
+          setRequests(uniqueById);
         })
-        .catch(err => console.error('Failed to fetch requests:', err))
+        .catch(err => {
+          console.error('Failed to fetch requests:', err);
+        });
 
       // Fetch addresses
-      fetch(`/api/addresses/user/${userId}`)
-        .then(res => res.json())
+      console.log('Fetching addresses for user:', primaryUserId);
+      fetch(`/api/addresses/user/${primaryUserId}`)
+        .then(res => {
+          if (!res.ok) {
+            console.error('Failed to fetch addresses - HTTP status:', res.status);
+            return res.json().then(err => {
+              throw new Error(err.message || `HTTP ${res.status}`);
+            });
+          }
+          return res.json();
+        })
         .then(data => {
+          console.log('Fetched addresses response:', data);
           if (Array.isArray(data)) {
-            setAddresses(data)
+            console.log(`Found ${data.length} addresses for user ${userId}`);
+            setAddresses(data);
+          } else {
+            console.warn('Addresses response is not an array:', data);
+            setAddresses([]);
           }
         })
-        .catch(err => console.error('Failed to fetch addresses:', err))
+        .catch(err => {
+          console.error('Failed to fetch addresses:', err);
+          // Set empty array on error to show "no addresses" state
+          setAddresses([]);
+        })
     } else {
       // Demo data for non-logged in users
       setRecentOrders([
@@ -601,6 +1275,7 @@ export default function DashboardPage() {
     { key: 'requests', icon: <FileCheck className="h-5 w-5" />, label: 'Track Requests', color: 'indigo' },
     { key: 'address', icon: <MapPin className="h-5 w-5" />, label: 'My Address', color: 'teal' },
     { key: 'wallet', icon: <Wallet className="h-5 w-5" />, label: 'My Wallet', color: 'green', highlight: true },
+    { key: 'pets', icon: <Heart className="h-5 w-5" />, label: 'My Pets', color: 'pink' },
     { key: 'coupons', icon: <Gift className="h-5 w-5" />, label: 'My Coupons', color: 'red' },
     { key: 'rewards', icon: <Award className="h-5 w-5" />, label: 'Reward Points', color: 'yellow' },
     { key: 'refer', icon: <Users className="h-5 w-5" />, label: 'Refer a Friend', color: 'cyan' },
@@ -674,7 +1349,7 @@ export default function DashboardPage() {
             </AlertTitle>
             <AlertDescription className="text-orange-800">
               Your <strong>{membership.tier}</strong> membership expires in <strong>{daysUntilExpiry} day{daysUntilExpiry !== 1 ? 's' : ''}</strong> on{' '}
-              <strong>{new Date(membership.expiryDate).toLocaleDateString()}</strong>.
+              <strong>{(membership as any).lifetime ? 'Lifetime' : new Date(membership.expiryDate).toLocaleDateString()}</strong>.
               <div className="mt-2">
                 <Button 
                   onClick={() => setLocation('/privilege-club')}
@@ -701,7 +1376,11 @@ export default function DashboardPage() {
                       {getMembershipDiscount(membership.tier)}% discount on all products
                     </p>
                     <p className="text-sm opacity-75 mt-1">
-                      Expires: {new Date(membership.expiryDate).toLocaleDateString()}
+                      {(() => {
+                        const expiry = new Date(membership.expiryDate);
+                        const isLifetime = (membership as any).lifetime === true || expiry.getFullYear() >= 9999;
+                        return `Expires: ${isLifetime ? 'Lifetime' : expiry.toLocaleDateString()}`;
+                      })()}
                     </p>
                   </div>
                 </div>
@@ -711,6 +1390,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Auto-Renew Toggle */}
+              {(membership as any).lifetime !== true && (
               <div className="border-t border-white/20 pt-4 mb-4">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
@@ -757,9 +1437,10 @@ export default function DashboardPage() {
                       }
                     }}
                     className="data-[state=checked]:bg-green-500"
-                  />
+                    />
                 </div>
               </div>
+              )}
 
               {/* Membership Statistics */}
               {membershipStats?.hasActiveMembership && membershipStats.statistics && (
@@ -2133,10 +2814,10 @@ export default function DashboardPage() {
         return
       }
 
-      // Get userId - try multiple possible properties
-      const userId = user.id || (user as any)._id || (user as any).userId;
+      // Use the same canonical userId logic as fetch to ensure persistence under one id
+      const canonicalUserId = String((user as any)?._id || user?.id || (user as any)?.userId || '');
       
-      if (!userId) {
+      if (!canonicalUserId) {
         toast({
           title: "Authentication Error",
           description: "User ID not found. Please log in again.",
@@ -2147,7 +2828,7 @@ export default function DashboardPage() {
 
       try {
         const requestData = {
-          userId,
+          userId: canonicalUserId,
           type: selectedRequestType,
           subject: newRequestSubject,
           description: newRequestDescription,
@@ -2703,9 +3384,10 @@ export default function DashboardPage() {
     }
 
     const handleSaveAddress = async () => {
-      const userId = user.id || (user as any)._id || (user as any).userId
+      // Get userId consistently - same logic as in useEffect
+      const userId = String((user as any)?._id || (user as any)?.id || user?.id || '');
 
-      if (!userId) {
+      if (!userId || userId === 'undefined' || userId === 'null') {
         toast({
           title: "Error",
           description: "User ID not found. Please log in again.",
@@ -4506,6 +5188,927 @@ export default function DashboardPage() {
     )
   }
 
+  // Pets rendering
+  const renderPets = () => {
+    const speciesEmojis: Record<string, string> = {
+      cat: '🐱',
+      dog: '🐶',
+      rabbit: '🐰',
+      bird: '🦜',
+      hamster: '🐹',
+      other: '🐾',
+    }
+
+    const speciesLabels: Record<string, string> = {
+      cat: 'Cat',
+      dog: 'Dog',
+      rabbit: 'Rabbit',
+      bird: 'Bird',
+      hamster: 'Hamster',
+      other: 'Other',
+    }
+
+    const healthStatusLabels: Record<string, { label: string; color: string }> = {
+      excellent: { label: 'Excellent', color: 'bg-green-500' },
+      good: { label: 'Good', color: 'bg-blue-500' },
+      fair: { label: 'Fair', color: 'bg-yellow-500' },
+      poor: { label: 'Poor', color: 'bg-red-500' },
+    }
+
+    const recordTypeLabels: Record<string, { label: string; icon: any }> = {
+      vaccination: { label: 'Vaccination', icon: Stethoscope },
+      checkup: { label: 'Checkup', icon: Activity },
+      medication: { label: 'Medication', icon: FileText },
+      surgery: { label: 'Surgery', icon: Stethoscope },
+      grooming: { label: 'Grooming', icon: Heart },
+    other: { label: 'Other', icon: FileText },
+    'care-plan': { label: 'Care Plan', icon: ClipboardList },
+    }
+
+    const carePlanCategoryLabels: Record<CarePlanCategory, string> = {
+      nutrition: 'Nutrition',
+      exercise: 'Exercise',
+      grooming: 'Grooming',
+      medication: 'Medication',
+      wellness: 'Wellness',
+      other: 'Other',
+    }
+
+    const carePlanFrequencyLabels: Record<CarePlanFrequency, string> = {
+      once: 'One-time',
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+      custom: 'Custom Interval',
+    }
+
+    const carePlanStatusStyles: Record<PetCarePlan['status'], string> = {
+      upcoming: 'bg-blue-100 text-blue-700',
+      overdue: 'bg-red-100 text-red-700',
+      completed: 'bg-green-100 text-green-700',
+    }
+
+    const handleEditPet = (pet: Pet) => {
+      setSelectedPet(pet)
+      petForm.reset({
+        name: pet.name,
+        species: pet.species,
+        breed: pet.breed || '',
+        age: pet.age,
+        weight: pet.weight,
+        gender: pet.gender || 'unknown',
+        photo: pet.photo || '',
+        birthday: pet.birthday ? formatDate(new Date(pet.birthday), 'yyyy-MM-dd') : '',
+        healthStatus: pet.healthStatus || 'good',
+        healthNotes: pet.healthNotes || '',
+        specialNeeds: pet.specialNeeds?.join(', ') || '',
+      })
+      setIsEditDialogOpen(true)
+    }
+
+    const handleOpenHealthOverview = (pet: Pet) => {
+      setSelectedPet(pet)
+      setIsHealthOverviewOpen(true)
+    }
+
+    const handleAddHealthRecord = (pet: Pet) => {
+      setSelectedPet(pet)
+      healthRecordForm.reset({
+        recordType: 'checkup',
+        title: '',
+        description: '',
+        date: formatDate(new Date(), 'yyyy-MM-dd'),
+        veterinarian: '',
+        location: '',
+        cost: undefined,
+        nextDueDate: '',
+        notes: '',
+        weight: undefined,
+        temperature: undefined,
+        healthScore: undefined,
+      })
+      setIsHealthRecordDialogOpen(true)
+    }
+
+    const handleAddCarePlan = (pet: Pet) => {
+      setSelectedPet(pet)
+      carePlanForm.reset({
+        title: '',
+        description: '',
+        category: 'wellness',
+        frequency: 'once',
+        customIntervalDays: undefined,
+        startDate: formatDate(new Date(), 'yyyy-MM-dd'),
+        reminderLeadDays: 1,
+        remindersEnabled: true,
+      })
+      setIsCarePlanDialogOpen(true)
+    }
+
+    const handleCompleteCarePlan = (plan: PetCarePlan) => {
+      if (completeCarePlanMutation.isPending) return
+      completeCarePlanMutation.mutate({ petId: plan.petId, planId: plan._id })
+    }
+
+    const handleDeleteCarePlan = (plan: PetCarePlan) => {
+      if (deleteCarePlanMutation.isPending) return
+      if (confirm('Remove this care plan?')) {
+        deleteCarePlanMutation.mutate({ petId: plan.petId, planId: plan._id })
+      }
+    }
+
+    const handleDeletePet = (petId: string) => {
+      if (confirm('Are you sure you want to delete this pet profile? This action cannot be undone.')) {
+        deletePetMutation.mutate(petId)
+      }
+    }
+
+    const onPetSubmit = (data: PetFormData) => {
+      if (selectedPet) {
+        updatePetMutation.mutate({ petId: selectedPet._id, data })
+      } else {
+        createPetMutation.mutate(data)
+      }
+    }
+
+    const onHealthRecordSubmit = (data: HealthRecordFormData) => {
+      if (selectedPet) {
+        createHealthRecordMutation.mutate({ petId: selectedPet._id, data })
+      }
+    }
+
+    const onCarePlanSubmit = (data: CarePlanFormData) => {
+      if (!selectedPet) return
+      const payload: CarePlanFormData = {
+        ...data,
+        remindersEnabled: data.remindersEnabled ?? true,
+        customIntervalDays: data.frequency === 'custom' ? data.customIntervalDays : undefined,
+      }
+      createCarePlanMutation.mutate({ petId: selectedPet._id, data: payload })
+    }
+
+    const calculateAge = (birthday?: string): string => {
+      if (!birthday) return 'Unknown'
+      const birth = new Date(birthday)
+      const today = new Date()
+      const years = today.getFullYear() - birth.getFullYear()
+      const months = today.getMonth() - birth.getMonth()
+      if (months < 0) {
+        return `${years - 1} years, ${12 + months} months`
+      }
+      return `${years} years, ${months} months`
+    }
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-1">My Pets 🐾</h2>
+            <p className="text-gray-600 mt-1">Manage your pet profiles and health records</p>
+          </div>
+          <Button onClick={() => setIsAddDialogOpen(true)} className="bg-[#26732d] hover:bg-[#1e5d26]">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Pet
+          </Button>
+        </div>
+
+        {/* Alerts */}
+        {/* Birthday alerts removed in redesign */}
+
+        {healthReminders.length > 0 && (
+          <Alert className="mb-6 border-blue-500 bg-blue-50">
+            <Clock className="h-4 w-4 text-blue-600" />
+            <AlertTitle>Health Reminders</AlertTitle>
+            <AlertDescription>
+              You have {healthReminders.length} upcoming health appointment{healthReminders.length > 1 ? 's' : ''} that need to be scheduled.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="pets">My Pets ({pets.length})</TabsTrigger>
+            <TabsTrigger value="health">Health Records</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="pets" className="mt-6">
+            {isLoadingPets ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500">Loading pets...</p>
+              </div>
+            ) : pets.length === 0 ? (
+              <Card className="text-center py-12">
+                <CardContent>
+                  <div className="text-6xl mb-4">🐾</div>
+                  <h3 className="text-xl font-semibold mb-2">No pets yet</h3>
+                  <p className="text-gray-600 mb-4">Add your first pet to get started!</p>
+                  <Button onClick={() => setIsAddDialogOpen(true)} className="bg-[#26732d] hover:bg-[#1e5d26]">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Your First Pet
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {pets.map((pet) => (
+                  <PetCard
+                    key={pet._id}
+                    pet={pet}
+                    speciesEmojis={speciesEmojis}
+                    speciesLabels={speciesLabels}
+                    healthStatusLabels={healthStatusLabels}
+                    onEdit={() => handleEditPet(pet)}
+                    onAddHealthRecord={() => handleAddHealthRecord(pet)}
+                    onDelete={() => handleDeletePet(pet._id)}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Birthdays content removed */}
+
+          <TabsContent value="health" className="mt-6">
+            {healthReminders.length === 0 ? (
+              <Card className="text-center py-12">
+                <CardContent>
+                  <div className="text-6xl mb-4">🏥</div>
+                  <h3 className="text-xl font-semibold mb-2">No upcoming health reminders</h3>
+                  <p className="text-gray-600">Add health records with due dates to get reminders!</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {healthReminders.map((reminder) => {
+                  const recordTypeKey =
+                    reminder.reminderType === 'carePlan' ? 'care-plan' : reminder.recordType
+                  const RecordIcon = recordTypeLabels[recordTypeKey]?.icon || FileText
+                  const iconStyles =
+                    reminder.reminderType === 'carePlan'
+                      ? 'bg-emerald-100 text-emerald-600'
+                      : 'bg-blue-100 text-blue-600'
+                  const descriptionText =
+                    reminder.reminderType === 'carePlan'
+                      ? `${carePlanCategoryLabels[reminder.category]} • ${carePlanFrequencyLabels[reminder.frequency]}`
+                      : recordTypeLabels[reminder.recordType]?.label || reminder.recordType
+                  const statusBadgeClass =
+                    reminder.reminderType === 'carePlan'
+                      ? carePlanStatusStyles[reminder.status]
+                      : 'bg-blue-100 text-blue-700'
+                  const dueDateLabel = reminder.nextDueDate
+                    ? formatDate(new Date(reminder.nextDueDate), 'MMM d, yyyy')
+                    : 'No due date'
+
+                  return (
+                    <Card key={reminder._id}>
+                      <CardHeader>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <div className={`p-2 rounded-lg ${iconStyles}`}>
+                              <RecordIcon className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <CardTitle className="flex items-center gap-2">
+                                {reminder.title}
+                                {reminder.reminderType === 'carePlan' && (
+                                  <Badge className={`${statusBadgeClass} border-0`}>
+                                    {reminder.status === 'overdue'
+                                      ? 'Overdue'
+                                      : reminder.status === 'completed'
+                                      ? 'Completed'
+                                      : 'Upcoming'}
+                                  </Badge>
+                                )}
+                              </CardTitle>
+                              <CardDescription>{descriptionText}</CardDescription>
+                              {reminder.reminderType === 'carePlan' && reminder.reminderLeadDays !== undefined && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Reminder {reminder.reminderLeadDays} day{reminder.reminderLeadDays === 1 ? '' : 's'} before due
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className={
+                              reminder.reminderType === 'carePlan'
+                                ? 'text-emerald-600 border-emerald-200 bg-emerald-50'
+                                : 'text-blue-600 border-blue-200 bg-blue-50'
+                            }
+                          >
+                            <CalendarClock className="h-3 w-3 mr-1" />
+                            {dueDateLabel}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      {reminder.description && (
+                        <CardContent>
+                          <p className="text-sm text-gray-600">
+                            {reminder.description}
+                          </p>
+                        </CardContent>
+                      )}
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+
+        {/* Add Pet Dialog */}
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Add New Pet</DialogTitle>
+              <DialogDescription>Create a profile for your pet</DialogDescription>
+            </DialogHeader>
+            <Form {...petForm}>
+              <form onSubmit={petForm.handleSubmit(onPetSubmit)} className="space-y-4">
+                <FormField
+                  control={petForm.control}
+                  name="photo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pet Photo</FormLabel>
+                      <FormControl>
+                        <ImageUpload value={field.value || ''} onChange={field.onChange} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={petForm.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Pet Name *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Fluffy" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={petForm.control}
+                    name="species"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Species *</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select species" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="cat">🐱 Cat</SelectItem>
+                            <SelectItem value="dog">🐶 Dog</SelectItem>
+                            <SelectItem value="rabbit">🐰 Rabbit</SelectItem>
+                            <SelectItem value="bird">🦜 Bird</SelectItem>
+                            <SelectItem value="hamster">🐹 Hamster</SelectItem>
+                            <SelectItem value="other">🐾 Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={petForm.control}
+                  name="breed"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Breed</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Persian, Golden Retriever" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField
+                    control={petForm.control}
+                    name="age"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Age (months)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder="e.g., 24"
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={petForm.control}
+                    name="weight"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Weight (kg)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            placeholder="e.g., 5.5"
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={petForm.control}
+                    name="gender"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Gender</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select gender" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="male">♂ Male</SelectItem>
+                            <SelectItem value="female">♀ Female</SelectItem>
+                            <SelectItem value="unknown">Unknown</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={petForm.control}
+                  name="birthday"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Birthday</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={petForm.control}
+                  name="healthStatus"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Health Status</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select health status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="excellent">Excellent</SelectItem>
+                          <SelectItem value="good">Good</SelectItem>
+                          <SelectItem value="fair">Fair</SelectItem>
+                          <SelectItem value="poor">Poor</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={petForm.control}
+                  name="healthNotes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Health Notes</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Any health concerns or notes..." {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={petForm.control}
+                  name="specialNeeds"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Special Needs (comma-separated)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Allergies, Diabetes, Special diet" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-[#26732d] hover:bg-[#1e5d26]">
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Pet
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Pet Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Pet Profile</DialogTitle>
+              <DialogDescription>Update your pet's information</DialogDescription>
+            </DialogHeader>
+            <Form {...petForm}>
+              <form onSubmit={petForm.handleSubmit(onPetSubmit)} className="space-y-4">
+                <FormField
+                  control={petForm.control}
+                  name="photo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pet Photo</FormLabel>
+                      <FormControl>
+                        <ImageUpload value={field.value || ''} onChange={field.onChange} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={petForm.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Pet Name *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Fluffy" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={petForm.control}
+                    name="species"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Species *</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select species" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="cat">🐱 Cat</SelectItem>
+                            <SelectItem value="dog">🐶 Dog</SelectItem>
+                            <SelectItem value="rabbit">🐰 Rabbit</SelectItem>
+                            <SelectItem value="bird">🦜 Bird</SelectItem>
+                            <SelectItem value="hamster">🐹 Hamster</SelectItem>
+                            <SelectItem value="other">🐾 Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={petForm.control}
+                  name="breed"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Breed</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Persian, Golden Retriever" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField
+                    control={petForm.control}
+                    name="age"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Age (months)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder="e.g., 24"
+                            {...field}
+                            value={field.value || ''}
+                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={petForm.control}
+                    name="weight"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Weight (kg)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            placeholder="e.g., 5.5"
+                            {...field}
+                            value={field.value || ''}
+                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={petForm.control}
+                    name="gender"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Gender</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select gender" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="male">♂ Male</SelectItem>
+                            <SelectItem value="female">♀ Female</SelectItem>
+                            <SelectItem value="unknown">Unknown</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={petForm.control}
+                  name="birthday"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Birthday</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={petForm.control}
+                  name="healthStatus"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Health Status</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select health status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="excellent">Excellent</SelectItem>
+                          <SelectItem value="good">Good</SelectItem>
+                          <SelectItem value="fair">Fair</SelectItem>
+                          <SelectItem value="poor">Poor</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={petForm.control}
+                  name="healthNotes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Health Notes</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Any health concerns or notes..." {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={petForm.control}
+                  name="specialNeeds"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Special Needs (comma-separated)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Allergies, Diabetes, Special diet" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-[#26732d] hover:bg-[#1e5d26]">
+                    <Save className="h-4 w-4 mr-2" />
+                    Update Pet
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Health Record Dialog */}
+        <Dialog open={isHealthRecordDialogOpen} onOpenChange={setIsHealthRecordDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Add Health Record</DialogTitle>
+              <DialogDescription>
+                Record health information for {selectedPet?.name}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...healthRecordForm}>
+              <form onSubmit={healthRecordForm.handleSubmit(onHealthRecordSubmit)} className="space-y-4">
+                <FormField
+                  control={healthRecordForm.control}
+                  name="recordType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Record Type *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select record type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="vaccination">💉 Vaccination</SelectItem>
+                          <SelectItem value="checkup">🏥 Checkup</SelectItem>
+                          <SelectItem value="medication">💊 Medication</SelectItem>
+                          <SelectItem value="surgery">⚕️ Surgery</SelectItem>
+                          <SelectItem value="grooming">✂️ Grooming</SelectItem>
+                          <SelectItem value="other">📝 Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={healthRecordForm.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Title *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Annual Checkup, Rabies Vaccination" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={healthRecordForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Additional details..." {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={healthRecordForm.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date *</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={healthRecordForm.control}
+                    name="nextDueDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Next Due Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={healthRecordForm.control}
+                    name="veterinarian"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Veterinarian</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Vet name" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={healthRecordForm.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Location</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Clinic name" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={healthRecordForm.control}
+                  name="cost"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cost (HKD)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          {...field}
+                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={healthRecordForm.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Additional notes..." {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsHealthRecordDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-[#26732d] hover:bg-[#1e5d26]">
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Record
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
+
   // Savings Plan rendering
   const renderSavings = () => {
     return (
@@ -4759,6 +6362,8 @@ export default function DashboardPage() {
         return renderAddress()
       case 'wallet':
         return renderWallet()
+      case 'pets':
+        return renderPets()
       case 'coupons':
         return renderCoupons()
       case 'rewards':

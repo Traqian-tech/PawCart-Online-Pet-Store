@@ -55,6 +55,8 @@ if (!activeProvider) {
 console.log('✅ Environment configuration validated');
 
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import memorystore from "memorystore";
 import { connectDB } from "./mongodb";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -74,6 +76,81 @@ process.on('uncaughtException', (error) => {
 });
 
 const app = express();
+
+// CORS configuration - must be before other middleware
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  
+  // Allow requests from:
+  // 1. Same origin (no origin header)
+  // 2. Localhost (development)
+  // 3. Configured allowed origins (production)
+  // 4. Same host (for same-domain requests)
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+  const host = req.headers.host;
+  const protocol = req.secure ? 'https' : 'http';
+  const sameOrigin = host ? `${protocol}://${host}` : null;
+  
+  let allowOrigin: string | undefined;
+  
+  if (!origin) {
+    // Same-origin request (no origin header)
+    allowOrigin = sameOrigin || '*';
+  } else if (isDevelopment && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+    // Development: allow localhost
+    allowOrigin = origin;
+  } else if (origin === sameOrigin) {
+    // Same origin
+    allowOrigin = origin;
+  } else if (allowedOrigins.includes(origin)) {
+    // Configured allowed origin
+    allowOrigin = origin;
+  } else if (isDevelopment) {
+    // Development: be more permissive
+    allowOrigin = origin;
+  }
+  
+  if (allowOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+  }
+  
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  
+  next();
+});
+
+// Session configuration
+const sessionSecret = process.env.SESSION_SECRET || 'default-secret-key-change-in-production';
+const MemoryStore = memorystore(session);
+
+// Trust proxy for accurate HTTPS detection (important for Render, Railway, etc.)
+app.set('trust proxy', 1);
+
+app.use(session({
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  name: 'pawcart.sid', // Custom session cookie name
+  store: new MemoryStore({
+    checkPeriod: 86400000 // prune expired entries every 24h
+  }),
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS required)
+    httpOnly: true, // Prevent XSS attacks
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    sameSite: 'lax', // CSRF protection
+    path: '/' // Ensure cookie is available for all paths
+  }
+}));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 

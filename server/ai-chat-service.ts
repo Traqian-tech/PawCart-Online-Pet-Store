@@ -295,14 +295,10 @@ Please respond in a professional and friendly tone, using the same language as t
     // If products found, enhance AI response to mention them
     if (products.length > 0) {
       const isChineseQuery = /[\u4e00-\u9fa5]/.test(request.message);
-      const productMention = isChineseQuery 
-        ? `\n\n💡 我为您找到了相关产品，请查看下方的产品卡片，点击即可查看详细信息和购买。`
-        : `\n\n💡 I've found relevant products for you. Please check the product cards below - click on them to view details and make a purchase.`;
+      const productMention = `\n\n💡 I've found relevant products for you. Please check the product cards below - click on them to view details and make a purchase.`;
       
       // Only append if AI response doesn't already mention products
-      if (!aiResponse.toLowerCase().includes('product') && 
-          !aiResponse.includes('产品') && 
-          !aiResponse.includes('商品')) {
+      if (!aiResponse.toLowerCase().includes('product')) {
         aiResponse += productMention;
       }
     }
@@ -344,49 +340,31 @@ async function chatWithRules(request: ChatRequest): Promise<ChatResponse> {
   }
 
   // Product inquiries - Cat food
-  if (message.includes('cat food') || originalMessage.includes('猫粮') || originalMessage.includes('貓糧')) {
+  if (message.includes('cat food')) {
     const products = await Product.find({ 
       category: { $regex: 'cat.*food', $options: 'i' } 
     }).limit(3).lean();
 
-    if (isChineseQuery) {
-      return {
-        response: `我们提供多种优质猫粮选择！以下是一些推荐：\n\n${products.map(p => 
-          `🐱 ${p.name} - HK$${p.price}\n${p.description || ''}`
-        ).join('\n\n')}\n\n您想了解更多详情吗？`,
-        products
-      };
-    } else {
-      return {
-        response: `We have a variety of premium cat food options! Here are some recommendations:\n\n${products.map(p => 
-          `🐱 ${p.name} - HK$${p.price}\n${p.description || ''}`
-        ).join('\n\n')}\n\nWould you like to know more about any of these?`,
-        products
-      };
-    }
+    return {
+      response: `We have a variety of premium cat food options! Here are some recommendations:\n\n${products.map(p => 
+        `🐱 ${p.name} - HK$${p.price}\n${p.description || ''}`
+      ).join('\n\n')}\n\nWould you like to know more about any of these?`,
+      products
+    };
   }
 
   // Product inquiries - Dog food
-  if (message.includes('dog food') || originalMessage.includes('狗粮') || originalMessage.includes('狗糧')) {
+  if (message.includes('dog food')) {
     const products = await Product.find({ 
       category: { $regex: 'dog.*food', $options: 'i' } 
     }).limit(3).lean();
 
-    if (isChineseQuery) {
-      return {
-        response: `我们提供各种适合不同品种和年龄的狗粮选择！以下是一些热门选择：\n\n${products.map(p => 
-          `🐶 ${p.name} - HK$${p.price}\n${p.description || ''}`
-        ).join('\n\n')}\n\n需要我根据您狗狗的需求为您推荐吗？`,
-        products
-      };
-    } else {
-      return {
-        response: `We offer various dog food options for different breeds and ages! Here are some popular choices:\n\n${products.map(p => 
-          `🐶 ${p.name} - HK$${p.price}\n${p.description || ''}`
-        ).join('\n\n')}\n\nWould you like a recommendation based on your dog's needs?`,
-        products
-      };
-    }
+    return {
+      response: `We offer various dog food options for different breeds and ages! Here are some popular choices:\n\n${products.map(p => 
+        `🐶 ${p.name} - HK$${p.price}\n${p.description || ''}`
+      ).join('\n\n')}\n\nWould you like a recommendation based on your dog's needs?`,
+      products
+    };
   }
 
   // Toy inquiries
@@ -459,78 +437,46 @@ async function chatWithRules(request: ChatRequest): Promise<ChatResponse> {
     };
   }
 
-  // Pet knowledge questions - Largest dog breed (Chinese and English)
-  if ((originalMessage.includes('体型最大') || originalMessage.includes('最大的狗') || originalMessage.includes('largest dog') || originalMessage.includes('biggest dog') || 
-       originalMessage.includes('最大型') || (originalMessage.includes('体型') && originalMessage.includes('大'))) && 
-      (originalMessage.includes('狗') || originalMessage.includes('dog'))) {
-    if (isChineseQuery) {
-      return {
-        response: `关于体型最大的狗，这是一个很有趣的问题！🐶\n\n**世界上体型最大的狗品种：**\n• 大丹犬 (Great Dane) - 肩高可达80-90厘米，体重50-90公斤\n• 爱尔兰猎狼犬 (Irish Wolfhound) - 肩高可达71-90厘米，体重40-70公斤\n• 圣伯纳犬 (Saint Bernard) - 肩高可达65-90厘米，体重50-90公斤\n• 马士提夫犬 (Mastiff) - 肩高可达70-91厘米，体重50-100公斤\n• 纽芬兰犬 (Newfoundland) - 肩高可达66-71厘米，体重45-70公斤\n\n**大型犬的护理要点：**\n• 需要足够的运动空间和活动量\n• 饮食需求量大，需要高质量的大型犬专用粮\n• 关节健康需要特别关注\n• 定期体检和健康监测很重要\n\n在PawCart，我们提供多种大型犬专用狗粮和营养补充品，帮助您的大型犬保持健康！需要我为您推荐适合大型犬的产品吗？🍖`
-      };
-    } else {
-      return {
-        response: `Great question about the largest dog breeds! 🐶\n\n**World's Largest Dog Breeds:**\n• Great Dane - Height: 80-90 cm, Weight: 50-90 kg\n• Irish Wolfhound - Height: 71-90 cm, Weight: 40-70 kg\n• Saint Bernard - Height: 65-90 cm, Weight: 50-90 kg\n• Mastiff - Height: 70-91 cm, Weight: 50-100 kg\n• Newfoundland - Height: 66-71 cm, Weight: 45-70 kg\n\n**Care Tips for Large Breeds:**\n• Need ample space and exercise\n• Require high-quality large breed dog food\n• Joint health requires special attention\n• Regular veterinary check-ups are important\n\nAt PawCart, we offer various large breed dog foods and supplements to help keep your large dog healthy! Would you like recommendations for large breed products? 🍖`
-      };
-    }
+  // Pet knowledge questions - Largest dog breed
+  if ((originalMessage.includes('largest dog') || originalMessage.includes('biggest dog'))) {
+    return {
+      response: `Great question about the largest dog breeds! 🐶\n\n**World's Largest Dog Breeds:**\n• Great Dane - Height: 80-90 cm, Weight: 50-90 kg\n• Irish Wolfhound - Height: 71-90 cm, Weight: 40-70 kg\n• Saint Bernard - Height: 65-90 cm, Weight: 50-90 kg\n• Mastiff - Height: 70-91 cm, Weight: 50-100 kg\n• Newfoundland - Height: 66-71 cm, Weight: 45-70 kg\n\n**Care Tips for Large Breeds:**\n• Need ample space and exercise\n• Require high-quality large breed dog food\n• Joint health requires special attention\n• Regular veterinary check-ups are important\n\nAt PawCart, we offer various large breed dog foods and supplements to help keep your large dog healthy! Would you like recommendations for large breed products? 🍖`
+    };
   }
 
   // Pet knowledge questions - Dog lifespan
-  if ((message.includes('狗') || message.includes('dog')) && 
-      (message.includes('寿命') || message.includes('lifespan') || message.includes('live') || message.includes('age'))) {
-    if (isChineseQuery) {
-      return {
-        response: `关于狗的寿命，这是一个很好的问题！🐶\n\n**平均狗寿命：**\n• 小型犬（如吉娃娃、博美）：12-16年\n• 中型犬（如比格犬、斗牛犬）：10-13年\n• 大型犬（如德国牧羊犬、金毛）：9-12年\n• 巨型犬（如大丹犬、马士提夫）：7-10年\n\n**影响寿命的因素：**\n• 遗传和品种\n• 饮食和营养\n• 运动量\n• 定期兽医护理\n• 生活环境\n\n在PawCart，我们提供优质的狗粮和营养补充品，帮助支持您爱犬的健康和长寿！需要我为您推荐适合不同年龄段的营养产品吗？🍖`
-      };
-    } else {
-      return {
-        response: `Great question about dog lifespan! 🐶\n\n**Average Dog Lifespan:**\n• Small breeds (e.g., Chihuahua, Pomeranian): 12-16 years\n• Medium breeds (e.g., Beagle, Bulldog): 10-13 years\n• Large breeds (e.g., German Shepherd, Golden Retriever): 9-12 years\n• Giant breeds (e.g., Great Dane, Mastiff): 7-10 years\n\n**Factors affecting lifespan:**\n• Genetics and breed\n• Diet and nutrition\n• Exercise and activity level\n• Regular veterinary care\n• Living environment\n\nAt PawCart, we offer premium dog food and supplements that can help support your dog's health and longevity! Would you like recommendations for age-appropriate nutrition? 🍖`
-      };
-    }
+  if (message.includes('dog') && 
+      (message.includes('lifespan') || message.includes('live') || message.includes('age'))) {
+    return {
+      response: `Great question about dog lifespan! 🐶\n\n**Average Dog Lifespan:**\n• Small breeds (e.g., Chihuahua, Pomeranian): 12-16 years\n• Medium breeds (e.g., Beagle, Bulldog): 10-13 years\n• Large breeds (e.g., German Shepherd, Golden Retriever): 9-12 years\n• Giant breeds (e.g., Great Dane, Mastiff): 7-10 years\n\n**Factors affecting lifespan:**\n• Genetics and breed\n• Diet and nutrition\n• Exercise and activity level\n• Regular veterinary care\n• Living environment\n\nAt PawCart, we offer premium dog food and supplements that can help support your dog's health and longevity! Would you like recommendations for age-appropriate nutrition? 🍖`
+    };
   }
 
   // Pet knowledge questions - Cat lifespan
-  if ((message.includes('猫') || message.includes('cat')) && 
-      (message.includes('寿命') || message.includes('lifespan') || message.includes('live') || message.includes('age'))) {
-    if (isChineseQuery) {
-      return {
-        response: `关于猫的寿命，这是一个很好的问题！🐱\n\n**平均猫寿命：**\n• 室内猫：12-18年（良好护理下通常15-20年）\n• 室外猫：2-5年（由于交通、疾病、天敌等风险）\n• 有些猫可以活到20多岁！\n\n**影响寿命的因素：**\n• 室内vs室外生活\n• 饮食和营养\n• 定期兽医护理\n• 绝育\n• 运动和智力刺激\n\n在PawCart，我们提供优质的猫粮和健康产品，帮助您的猫咪健康长寿！需要我为您推荐适合老年猫的营养产品吗？🐟`
-      };
-    } else {
-      return {
-        response: `Great question about cat lifespan! 🐱\n\n**Average Cat Lifespan:**\n• Indoor cats: 12-18 years (often 15-20 years with good care)\n• Outdoor cats: 2-5 years (due to risks like traffic, disease, predators)\n• Some cats can live into their 20s!\n\n**Factors affecting lifespan:**\n• Indoor vs. outdoor living\n• Diet and nutrition\n• Regular veterinary care\n• Spaying/neutering\n• Exercise and mental stimulation\n\nAt PawCart, we offer premium cat food and health products to help your cat live a long, healthy life! Would you like recommendations for senior cat nutrition? 🐟`
-      };
-    }
+  if (message.includes('cat') && 
+      (message.includes('lifespan') || message.includes('live') || message.includes('age'))) {
+    return {
+      response: `Great question about cat lifespan! 🐱\n\n**Average Cat Lifespan:**\n• Indoor cats: 12-18 years (often 15-20 years with good care)\n• Outdoor cats: 2-5 years (due to risks like traffic, disease, predators)\n• Some cats can live into their 20s!\n\n**Factors affecting lifespan:**\n• Indoor vs. outdoor living\n• Diet and nutrition\n• Regular veterinary care\n• Spaying/neutering\n• Exercise and mental stimulation\n\nAt PawCart, we offer premium cat food and health products to help your cat live a long, healthy life! Would you like recommendations for senior cat nutrition? 🐟`
+    };
   }
 
   // General knowledge questions - Number of cities in China
-  if (originalMessage.includes('中国城市数量') || originalMessage.includes('中国有多少个城市') || 
-      (originalMessage.includes('中国城市') && (originalMessage.includes('数量') || originalMessage.includes('多少')))) {
+  if (originalMessage.includes('china') && originalMessage.includes('cities') && 
+      (originalMessage.includes('how many') || originalMessage.includes('number'))) {
     return {
-      response: `关于中国城市数量，这是一个很好的问题！🇨🇳\n\n**中国城市统计：**\n• 地级市：约300多个\n• 县级市：约400多个\n• 直辖市：4个（北京、上海、天津、重庆）\n• 总计：中国有超过600个城市\n\n**主要城市分类：**\n• 一线城市：北京、上海、广州、深圳\n• 新一线城市：成都、杭州、重庆、武汉等\n• 二线城市：多个省会城市和重要地级市\n• 三线及以下城市：众多中小城市\n\n**快速发展的城市：**\n中国的城市化进程持续快速发展，城市数量和质量都在不断提升。\n\n如果您有关于宠物产品的问题，我很乐意为您提供帮助！🐾`
+      response: `Great question about the number of cities in China! 🇨🇳\n\n**China City Statistics:**\n• Prefecture-level cities: Over 300\n• County-level cities: Over 400\n• Direct-controlled municipalities: 4 (Beijing, Shanghai, Tianjin, Chongqing)\n• Total: China has over 600 cities\n\n**Major City Classifications:**\n• Tier 1 cities: Beijing, Shanghai, Guangzhou, Shenzhen\n• New Tier 1 cities: Chengdu, Hangzhou, Chongqing, Wuhan, etc.\n• Tier 2 cities: Multiple provincial capitals and important prefecture-level cities\n• Tier 3 and below: Many small and medium-sized cities\n\n**Rapidly Developing Cities:**\nChina's urbanization process continues to develop rapidly, with both the number and quality of cities constantly improving.\n\nIf you have questions about pet products, I'd be happy to help! 🐾`
     };
   }
 
   // General pet care questions
-  if ((message.includes('狗') || message.includes('cat') || message.includes('dog') || message.includes('猫') || message.includes('pet')) && 
-      (message.includes('护理') || message.includes('care') || message.includes('健康') || message.includes('health') || 
-       message.includes('喂养') || message.includes('feed') || message.includes('训练') || message.includes('train'))) {
-    if (isChineseQuery) {
-      return {
-        response: `我很乐意帮助您解答宠物护理问题！🐾\n\n在PawCart，我们专注于提供优质的宠物护理产品和建议。我可以帮您找到合适的产品（食物、玩具、配件），对于详细的护理建议，我建议：\n\n• 健康问题请咨询您的兽医\n• 查看我们产品的说明了解喂养指南\n• 产品相关问题可致电客服：852-6214-6811\n\n您需要什么类型的宠物护理产品？我可以为您推荐最佳选择！🛍️`
-      };
-    } else {
-      return {
-        response: `I'd be happy to help with pet care questions! 🐾\n\nAt PawCart, we specialize in providing quality products and advice for pet care. While I can help you find the right products (food, toys, accessories), for detailed care advice, I recommend:\n\n• Consulting with your veterinarian for health concerns\n• Checking our product descriptions for feeding guidelines\n• Contacting our customer service at 852-6214-6811 for product-specific questions\n\nWhat type of product are you looking for to help with your pet's care? I can recommend the best options! 🛍️`
-      };
-    }
-  }
-
-  // Chinese greetings
-  if (isChineseQuery && (originalMessage.includes('你好') || originalMessage.includes('您好') || originalMessage.includes('嗨') || originalMessage.includes('在吗'))) {
+  if ((message.includes('cat') || message.includes('dog') || message.includes('pet')) && 
+      (message.includes('care') || message.includes('health') || 
+       message.includes('feed') || message.includes('train'))) {
     return {
-      response: '您好！欢迎来到PawCart宠物店！🐾 我是您的AI客服助手。我可以帮助您：\n\n📦 产品咨询\n💰 价格和优惠信息\n🚚 配送服务\n🎁 产品推荐\n\n今天有什么可以帮到您的吗？'
+      response: `I'd be happy to help with pet care questions! 🐾\n\nAt PawCart, we specialize in providing quality products and advice for pet care. While I can help you find the right products (food, toys, accessories), for detailed care advice, I recommend:\n\n• Consulting with your veterinarian for health concerns\n• Checking our product descriptions for feeding guidelines\n• Contacting our customer service at 852-6214-6811 for product-specific questions\n\nWhat type of product are you looking for to help with your pet's care? I can recommend the best options! 🛍️`
     };
   }
+
 
   // PRIORITY: Try calling AI API first if available (before product search)
   // This ensures we can answer ANY question, not just product-related ones
@@ -652,15 +598,10 @@ Please respond in a professional and friendly tone, using the same language as t
 
         // If products found, enhance AI response to mention them
         if (products.length > 0) {
-          const isChineseQuery = /[\u4e00-\u9fa5]/.test(request.message);
-          const productMention = isChineseQuery 
-            ? `\n\n💡 我为您找到了相关产品，请查看下方的产品卡片，点击即可查看详细信息和购买。`
-            : `\n\n💡 I've found relevant products for you. Please check the product cards below - click on them to view details and make a purchase.`;
+          const productMention = `\n\n💡 I've found relevant products for you. Please check the product cards below - click on them to view details and make a purchase.`;
           
           // Only append if AI response doesn't already mention products
-          if (!aiResponse.toLowerCase().includes('product') && 
-              !aiResponse.includes('产品') && 
-              !aiResponse.includes('商品')) {
+          if (!aiResponse.toLowerCase().includes('product')) {
             aiResponse += productMention;
           }
         }
@@ -733,33 +674,18 @@ Please respond in a professional and friendly tone, using the same language as t
     .select('name price categoryId description stockQuantity image slug brandId rating reviews');
 
   if (products.length > 0) {
-    if (isChineseQuery) {
-      return {
-        response: `我找到了一些相关产品：\n\n${products.map(p => 
-          `🛍️ ${p.name}\n💰 价格：HK$${p.price}\n📦 库存：${(p.stockQuantity || 0) > 0 ? '有货' : '缺货'}\n${p.description ? '📝 ' + p.description.substring(0, 100) : ''}`
-        ).join('\n\n')}\n\n💡 请查看下方的产品卡片，点击即可查看详细信息和购买。`,
-        products
-      };
-    } else {
-      return {
-        response: `I found some related products:\n\n${products.map(p => 
-          `🛍️ ${p.name}\n💰 Price: HK$${p.price}\n📦 Stock: ${(p.stockQuantity || 0) > 0 ? 'In Stock' : 'Out of Stock'}\n${p.description ? '📝 ' + p.description.substring(0, 100) : ''}`
-        ).join('\n\n')}\n\n💡 Please check the product cards below - click on them to view details and make a purchase.`,
-        products
-      };
-    }
+    return {
+      response: `I found some related products:\n\n${products.map(p => 
+        `🛍️ ${p.name}\n💰 Price: HK$${p.price}\n📦 Stock: ${(p.stockQuantity || 0) > 0 ? 'In Stock' : 'Out of Stock'}\n${p.description ? '📝 ' + p.description.substring(0, 100) : ''}`
+      ).join('\n\n')}\n\n💡 Please check the product cards below - click on them to view details and make a purchase.`,
+      products
+    };
   }
 
   // Complete default response (only if DeepSeek API is not available or failed, and no products found)
-  if (isChineseQuery) {
-    return {
-      response: `感谢您的咨询！我是PawCart的AI客服助手。🤖\n\n我可以回答您的任何问题，包括：\n• 🐾 宠物相关（产品、护理、健康等）\n• 📚 一般知识（地理、历史、科学等）\n• 🔍 产品咨询和推荐\n• 💰 价格和优惠信息\n• 🚚 配送和退货\n• 📱 联系方式\n• 💎 会员福利\n• 以及您想了解的任何其他话题！\n\n请告诉我您的问题，我会尽力为您提供帮助！\n\n注意：如果您的问题需要更详细的回答，建议您配置DeepSeek API密钥以获得完整的AI支持。目前我只能回答预设的问题。如需人工帮助，请致电：852-6214-6811。`
-    };
-  } else {
-    return {
-      response: `Thank you for your inquiry! I'm PawCart's AI customer service assistant. 🤖\n\nI can answer ANY questions you have, including:\n• 🐾 Pet-related topics (products, care, health, etc.)\n• 📚 General knowledge (geography, history, science, etc.)\n• 🔍 Product inquiries and recommendations\n• 💰 Prices and special offers\n• 🚚 Shipping and returns\n• 📱 Contact information\n• 💎 Membership benefits\n• And any other topics you're curious about!\n\nPlease tell me your question, and I'll do my best to help you!\n\nNote: For more detailed answers to any question, please configure the DeepSeek API key for full AI support. Currently, I can only answer preset questions. For human assistance, please call: 852-6214-6811.`
-    };
-  }
+  return {
+    response: `Thank you for your inquiry! I'm PawCart's AI customer service assistant. 🤖\n\nI can answer ANY questions you have, including:\n• 🐾 Pet-related topics (products, care, health, etc.)\n• 📚 General knowledge (geography, history, science, etc.)\n• 🔍 Product inquiries and recommendations\n• 💰 Prices and special offers\n• 🚚 Shipping and returns\n• 📱 Contact information\n• 💎 Membership benefits\n• And any other topics you're curious about!\n\nPlease tell me your question, and I'll do my best to help you!\n\nNote: For more detailed answers to any question, please configure the DeepSeek API key for full AI support. Currently, I can only answer preset questions. For human assistance, please call: 852-6214-6811.`
+  };
 }
 
 // Get popular product recommendations

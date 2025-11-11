@@ -298,7 +298,7 @@ export default function PaymentMethodSelector({
                 <div className="flex flex-col items-center space-y-2">
                   <RadioGroupItem value="alipay" id="mobile-alipay" className="sr-only" />
                   <div className="w-12 h-12 bg-[#1677FF] rounded-lg flex items-center justify-center">
-                    <span className="text-white font-bold text-xl">支</span>
+                    <span className="text-white font-bold text-xl">A</span>
                   </div>
                   <Label htmlFor="mobile-alipay" className="cursor-pointer text-center">
                     <span className="font-semibold">Alipay</span>
@@ -317,7 +317,7 @@ export default function PaymentMethodSelector({
                 <div className="flex flex-col items-center space-y-2">
                   <RadioGroupItem value="wechat" id="mobile-wechat" className="sr-only" />
                   <div className="w-12 h-12 bg-[#07C160] rounded-lg flex items-center justify-center">
-                    <span className="text-white font-bold text-xl">微</span>
+                    <span className="text-white font-bold text-xl">W</span>
                   </div>
                   <Label htmlFor="mobile-wechat" className="cursor-pointer text-center">
                     <span className="font-semibold">WeChat</span>
@@ -738,7 +738,7 @@ export default function PaymentMethodSelector({
                 </Badge>
                 <Badge variant="outline" className="text-xs">AMEX</Badge>
                 <Badge variant="outline" className="text-xs">JCB</Badge>
-                <Badge variant="outline" className="text-xs">银联</Badge>
+                <Badge variant="outline" className="text-xs">UnionPay</Badge>
               </div>
             </div>
 

@@ -88,7 +88,8 @@ export default function MembershipCheckoutPage() {
             userEmail,
             tier: membershipOrder.tier,
             paymentMethod: 'my-wallet',
-            amount: membershipOrder.price
+            amount: membershipOrder.price,
+            duration: membershipOrder.duration
           }),
         });
 
@@ -156,6 +157,9 @@ export default function MembershipCheckoutPage() {
           userId, 
           userEmail,
           tier: membershipOrder.tier,
+          paymentMethod: paymentMethod || transactionDetails?.paymentMethod || 'Unknown',
+          amount: membershipOrder.price,
+          duration: membershipOrder.duration,
           paymentDetails: transactionDetails
         }),
       });
@@ -259,7 +263,7 @@ export default function MembershipCheckoutPage() {
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span>Duration</span>
-                      <span className="font-bold">{membershipOrder.duration} Days</span>
+                      <span className="font-bold">{membershipOrder.duration <= 0 ? 'Lifetime' : `${membershipOrder.duration} Days`}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Discount on all products</span>
@@ -314,7 +318,7 @@ export default function MembershipCheckoutPage() {
                     
                     <div className="flex justify-between">
                       <span className="text-gray-600">Duration</span>
-                      <span className="font-medium">{membershipOrder.duration} Days</span>
+                      <span className="font-medium">{membershipOrder.duration <= 0 ? 'Lifetime' : `${membershipOrder.duration} Days`}</span>
                     </div>
 
                     <Separator />

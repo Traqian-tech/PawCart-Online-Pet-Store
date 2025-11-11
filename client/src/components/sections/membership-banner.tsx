@@ -1,9 +1,22 @@
 import { Button } from '@/components/ui/button';
 import { Percent, Truck, Star } from 'lucide-react';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 const logoPath = '/logo.png';
 
 export default function MembershipBanner() {
+  const [, setLocation] = useLocation();
+  
+  const handleJoinNow = () => {
+    // Store Diamond Paw lifetime membership order for checkout
+    const membershipOrder = {
+      tier: 'Diamond Paw',
+      price: 500,
+      duration: 0, // Lifetime
+    };
+    sessionStorage.setItem('pendingMembership', JSON.stringify(membershipOrder));
+    setLocation('/membership-checkout');
+  };
+  
   return (
     <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 p-1 shadow-2xl">
       {/* Decorative background patterns */}
@@ -63,15 +76,14 @@ export default function MembershipBanner() {
             </div>
             
             {/* Button */}
-            <Link href="/privilege-club">
-              <Button 
-                variant="meow" 
-                size="lg" 
-                className="px-10 py-6 rounded-2xl text-base md:text-lg font-bold btn-bounce whitespace-nowrap shadow-xl hover:shadow-2xl"
-              >
-                Join Club Now →
-              </Button>
-            </Link>
+            <Button 
+              variant="meow" 
+              size="lg" 
+              className="px-10 py-6 rounded-2xl text-base md:text-lg font-bold btn-bounce whitespace-nowrap shadow-xl hover:shadow-2xl"
+              onClick={handleJoinNow}
+            >
+              Join Club Now →
+            </Button>
           </div>
         </div>
       </div>

@@ -71,6 +71,7 @@ import WalletPage from "@/pages/wallet";
 import WalletCheckInPage from "@/pages/wallet-check-in";
 import WalletGamesPage from "@/pages/wallet-games";
 import WalletTasksPage from "@/pages/wallet-tasks";
+import PetsPage from "@/pages/pets";
 import FeedPetGame from "@/pages/games/feed-pet";
 import LuckyWheelGame from "@/pages/games/lucky-wheel";
 import MatchThreeGame from "@/pages/games/match-three";
@@ -168,6 +169,7 @@ function AppRoutes() {
         <Route path="/wallet/games/lucky-wheel" component={LuckyWheelGame} />
         <Route path="/wallet/games/match-three" component={MatchThreeGame} />
         <Route path="/wallet/games/quiz" component={PetQuizGame} />
+        <Route path="/pets" component={PetsPage} />
         <Route path="/debug/clear-quiz" component={DebugClearQuiz} />
         <Route component={NotFoundPage} />
       </Switch>

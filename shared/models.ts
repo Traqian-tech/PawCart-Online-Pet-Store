@@ -697,6 +697,153 @@ const chatConversationSchema = new Schema<IChatConversation>({
   messageCount: { type: Number, default: 0 },
 }, { timestamps: true });
 
+// Pet Profile Schema
+export interface IPet extends Document {
+  userId: string;
+  name: string;
+  species: 'cat' | 'dog' | 'rabbit' | 'bird' | 'hamster' | 'other';
+  breed?: string; // Breed
+  age?: number; // Age (months)
+  weight?: number; // Weight (kg)
+  gender?: 'male' | 'female' | 'unknown';
+  photo?: string; // Pet photo URL
+  birthday?: Date; // Birthday
+  healthStatus?: 'excellent' | 'good' | 'fair' | 'poor'; // Health status
+  healthNotes?: string; // Health notes
+  specialNeeds?: string[]; // Special needs (e.g., allergies, diseases, etc.)
+  preferences?: {
+    foodType?: string[]; // Preferred food types
+    activityLevel?: 'low' | 'medium' | 'high'; // Activity level
+    favoriteToys?: string[]; // Favorite toys
+  };
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const petSchema = new Schema<IPet>({
+  userId: { type: String, required: true, index: true },
+  name: { type: String, required: true },
+  species: { 
+    type: String, 
+    required: true, 
+    enum: ['cat', 'dog', 'rabbit', 'bird', 'hamster', 'other'],
+    index: true
+  },
+  breed: String,
+  age: Number,
+  weight: Number,
+  gender: { type: String, enum: ['male', 'female', 'unknown'] },
+  photo: String,
+  birthday: Date,
+  healthStatus: { 
+    type: String, 
+    enum: ['excellent', 'good', 'fair', 'poor'] 
+  },
+  healthNotes: String,
+  specialNeeds: [String],
+  preferences: {
+    foodType: [String],
+    activityLevel: { type: String, enum: ['low', 'medium', 'high'] },
+    favoriteToys: [String]
+  },
+  isActive: { type: Boolean, default: true },
+}, { timestamps: true });
+
+// Pet Health Record Schema
+export interface IPetHealthRecord extends Document {
+  petId: string;
+  userId: string;
+  recordType: 'vaccination' | 'checkup' | 'medication' | 'surgery' | 'grooming' | 'other';
+  title: string;
+  description?: string;
+  date: Date;
+  veterinarian?: string; // Veterinarian name
+  location?: string; // Location
+  cost?: number; // Cost
+  attachments?: string[]; // Attachments (e.g., check reports, photos, etc.)
+  nextDueDate?: Date; // Next due date (e.g., vaccination, checkup, etc.)
+  notes?: string;
+  weight?: number; // Weight
+  temperature?: number; // Temperature
+  healthScore?: number; // Health score (0-100)
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const petHealthRecordSchema = new Schema<IPetHealthRecord>({
+  petId: { type: String, required: true, index: true },
+  userId: { type: String, required: true, index: true },
+  recordType: {
+    type: String,
+    required: true,
+    enum: ['vaccination', 'checkup', 'medication', 'surgery', 'grooming', 'other'],
+    index: true
+  },
+  title: { type: String, required: true },
+  description: String,
+  date: { type: Date, required: true, index: true },
+  veterinarian: String,
+  location: String,
+  cost: Number,
+  attachments: [String],
+  nextDueDate: Date,
+  notes: String,
+  weight: { type: Number, min: 0, max: 200 },
+  temperature: { type: Number, min: 20, max: 45 },
+  healthScore: { type: Number, min: 0, max: 100 },
+}, { timestamps: true });
+
+// Pet Care Plan Schema
+export interface IPetCarePlan extends Document {
+  petId: string;
+  userId: string;
+  title: string;
+  description?: string;
+  category: 'nutrition' | 'exercise' | 'grooming' | 'medication' | 'wellness' | 'other';
+  frequency: 'once' | 'daily' | 'weekly' | 'monthly' | 'custom';
+  customIntervalDays?: number;
+  startDate: Date;
+  nextDueDate: Date;
+  remindersEnabled: boolean;
+  reminderLeadDays?: number;
+  status: 'upcoming' | 'completed' | 'overdue';
+  lastCompletedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const petCarePlanSchema = new Schema<IPetCarePlan>({
+  petId: { type: String, required: true, index: true },
+  userId: { type: String, required: true, index: true },
+  title: { type: String, required: true },
+  description: String,
+  category: {
+    type: String,
+    enum: ['nutrition', 'exercise', 'grooming', 'medication', 'wellness', 'other'],
+    default: 'wellness',
+    index: true,
+  },
+  frequency: {
+    type: String,
+    enum: ['once', 'daily', 'weekly', 'monthly', 'custom'],
+    default: 'once',
+    index: true,
+  },
+  customIntervalDays: { type: Number, min: 1, max: 365 },
+  startDate: { type: Date, required: true },
+  nextDueDate: { type: Date, required: true, index: true },
+  remindersEnabled: { type: Boolean, default: true },
+  reminderLeadDays: { type: Number, min: 0, max: 30, default: 1 },
+  status: {
+    type: String,
+    enum: ['upcoming', 'completed', 'overdue'],
+    default: 'upcoming',
+    index: true,
+  },
+  lastCompletedAt: Date,
+}, { timestamps: true });
+
 // Export Models
 export const Wallet = mongoose.model<IWallet>('Wallet', walletSchema);
 export const WalletTransaction = mongoose.model<IWalletTransaction>('WalletTransaction', walletTransactionSchema);
@@ -705,6 +852,9 @@ export const DailyCheckIn = mongoose.model<IDailyCheckIn>('DailyCheckIn', dailyC
 export const UserTask = mongoose.model<IUserTask>('UserTask', userTaskSchema);
 export const ChatMessage = mongoose.model<IChatMessage>('ChatMessage', chatMessageSchema);
 export const ChatConversation = mongoose.model<IChatConversation>('ChatConversation', chatConversationSchema);
+export const Pet = mongoose.model<IPet>('Pet', petSchema);
+export const PetHealthRecord = mongoose.model<IPetHealthRecord>('PetHealthRecord', petHealthRecordSchema);
+export const PetCarePlan = mongoose.model<IPetCarePlan>('PetCarePlan', petCarePlanSchema);
 
 // User Behavior Tracking Schema (for recommendation system)
 export interface IUserBehavior extends Document {
@@ -789,3 +939,6 @@ export type ChatMessageType = IChatMessage;
 export type ChatConversationType = IChatConversation;
 export type UserBehaviorType = IUserBehavior;
 export type ProductRecommendationType = IProductRecommendation;
+export type PetType = IPet;
+export type PetHealthRecordType = IPetHealthRecord;
+export type PetCarePlanType = IPetCarePlan;

@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { User, Product, Category, Brand, Announcement, Cart, Order, Invoice, BlogPost, Coupon, PaymentTransaction, PaymentWebhook, Request, Address, ChatMessage, ChatConversation, UserBehavior } from "@shared/models";
+import { User, Product, Category, Brand, Announcement, Cart, Order, Invoice, BlogPost, Coupon, PaymentTransaction, PaymentWebhook, Request, Address, ChatMessage, ChatConversation, UserBehavior, Pet, PetHealthRecord, PetCarePlan } from "@shared/models";
 import { recommendationService } from "./recommendation-service";
 import { generateUniqueProductSlug, findProductBySlug, migrateProductSlugs } from "./slug-utils";
 import type { IUser, ICart, ICartItem, IOrder, IInvoice, IBlogPost, ICoupon, IRequest, IAddress } from "@shared/models";
@@ -66,6 +66,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
   });
+
+  const parseDateInput = (value: any, options: { endOfDay?: boolean } = {}) => {
+    const { endOfDay = false } = options;
+
+    if (value instanceof Date) {
+      const date = new Date(value);
+      if (endOfDay) {
+        date.setHours(23, 59, 59, 999);
+      }
+      return isNaN(date.getTime()) ? undefined : date;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+
+      const parts = trimmed.split('-').map((segment) => parseInt(segment, 10));
+      if (parts.length === 3 && parts.every((segment) => !isNaN(segment))) {
+        const [y, m, d] = parts;
+        const date = endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d);
+        return isNaN(date.getTime()) ? undefined : date;
+      }
+
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) {
+        if (endOfDay) {
+          parsed.setHours(23, 59, 59, 999);
+        }
+        return parsed;
+      }
+    }
+
+    if (typeof value === 'number' && !isNaN(value)) {
+      const date = new Date(value);
+      if (endOfDay) {
+        date.setHours(23, 59, 59, 999);
+      }
+      return isNaN(date.getTime()) ? undefined : date;
+    }
+
+    return undefined;
+  };
+
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const computeCarePlanStatus = (nextDueDate?: Date | null) => {
+    if (!nextDueDate) {
+      return 'completed';
+    }
+    const todayStart = startOfDay(new Date());
+    return nextDueDate < todayStart ? 'overdue' : 'upcoming';
+  };
+
+  const addDays = (date: Date, days: number) => {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+  };
+
+  const calculateNextCarePlanDate = (plan: { frequency: string; nextDueDate?: Date | string | null; customIntervalDays?: number }) => {
+    const base = plan.nextDueDate ? new Date(plan.nextDueDate) : new Date();
+    base.setHours(0, 0, 0, 0);
+
+    let next: Date | null = null;
+    switch (plan.frequency) {
+      case 'daily':
+        next = addDays(base, 1);
+        break;
+      case 'weekly':
+        next = addDays(base, 7);
+        break;
+      case 'monthly':
+        next = new Date(base);
+        next.setMonth(next.getMonth() + 1);
+        break;
+      case 'custom':
+        if (plan.customIntervalDays && plan.customIntervalDays > 0) {
+          next = addDays(base, plan.customIntervalDays);
+        }
+        break;
+      default:
+        next = null;
+    }
+
+    if (next) {
+      next.setHours(23, 59, 59, 999);
+    }
+
+    return next;
+  };
 
   // Image upload endpoint with WebP conversion
   app.post('/api/upload/image', upload.single('image'), async (req, res) => {
@@ -1745,6 +1837,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('Login successful - User ID:', userId, 'Username:', userObj.username);
 
+      // Set session userId for authentication
+      (req.session as any).userId = userId;
+      console.log('✅ Session userId set:', userId);
+
       res.json({
         message: "Login successful",
         user: {
@@ -2523,7 +2619,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Purchase membership
   app.post("/api/membership/purchase", async (req, res) => {
     try {
-      const { userId, tier, userEmail, paymentDetails, paymentMethod, amount } = req.body;
+      const { userId, tier, userEmail, paymentDetails, paymentMethod, amount, duration } = req.body;
 
       console.log('=== Membership Purchase Request ===');
       console.log('Request body:', { userId, tier, userEmail, paymentDetails, paymentMethod, amount });
@@ -2586,8 +2682,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('SUCCESS: User found -', user.email || user.username);
 
+      // Decide if this is a lifetime purchase BEFORE any payment handling
+      const isLifetime = (typeof duration === 'number' && duration <= 0) || (tier === 'Diamond Paw' && typeof amount === 'number' && amount >= 500);
+      // Determine charge amount (server-authoritative)
+      const membershipPrice = isLifetime ? 500 : tierPrices[tier];
+
       // Handle wallet payment if specified
-      const membershipPrice = tierPrices[tier];
       if (paymentMethod === 'my-wallet') {
         console.log('Processing wallet payment for membership');
         const { getOrCreateWallet, addWalletTransaction } = await import('./wallet-routes');
@@ -2611,18 +2711,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           membershipPrice,
           wallet,
           `Purchase ${tier} membership`,
-          { tier, duration: '30 days' }
+          { tier, duration: isLifetime ? 'lifetime' : '30 days' }
         );
         console.log('Wallet payment successful');
       }
 
       // Update user with membership using storage
+      const expiryDate = isLifetime
+        ? new Date('9999-12-31T23:59:59.999Z')
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
       const membershipData = {
         membership: {
           tier: tier as 'Silver Paw' | 'Golden Paw' | 'Diamond Paw',
           startDate: new Date(),
-          expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-          autoRenew: false
+          expiryDate: expiryDate,
+          autoRenew: false,
+          lifetime: isLifetime
         }
       };
 
@@ -2667,6 +2771,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const membershipOrder = new Order({
         userId: orderUserId,
         status: 'Completed',
+        subtotal: membershipPrice, // Required field - subtotal before discounts and shipping
         total: membershipPrice,
         items: [{
           productId: `membership-${tier.toLowerCase().replace(/\s+/g, '-')}`,
@@ -2675,7 +2780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           price: membershipPrice,
           image: '/logo.png', // Use shop logo for membership
           type: 'membership',
-          duration: '30 days'
+          duration: isLifetime ? 'lifetime' : '30 days'
         }],
         customerInfo: {
           name: user.firstName && user.lastName 
@@ -2712,7 +2817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           price: membershipPrice,
           image: '/logo.png', // Use shop logo for membership
           type: 'membership',
-          duration: '30 days'
+          duration: isLifetime ? 'lifetime' : '30 days'
         }],
         subtotal: membershipPrice,
         total: membershipPrice,
@@ -2729,7 +2834,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Order updated with invoiceId:', membershipInvoice._id);
 
       // Send membership confirmation email (async, don't wait for it)
-      sendMembershipRenewedEmail(updatedUser, new Date(expiryDate))
+      sendMembershipRenewedEmail(updatedUser, expiryDate)
         .then((success) => {
           if (success) {
             console.log('✅ Membership confirmation email sent');
@@ -2783,6 +2888,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get membership error:", error);
       res.status(500).json({ message: "Failed to fetch membership" });
+    }
+  });
+
+  // Admin utility: Fix a specific membership order/invoice to lifetime/500
+  app.post("/api/admin/fix-membership-order", async (req, res) => {
+    try {
+      const { orderIdSuffix, adminSecret } = req.body as { orderIdSuffix?: string; adminSecret?: string };
+      if (!orderIdSuffix) {
+        return res.status(400).json({ message: "orderIdSuffix is required (e.g. 6911CE63)" });
+      }
+      if (process.env.ADMIN_SECRET && adminSecret !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      // Find order via aggregation by matching ObjectId string suffix (case-insensitive)
+      const matches = await Order.aggregate([
+        {
+          $addFields: {
+            _idStr: { $toString: "$_id" }
+          }
+        },
+        {
+          $match: {
+            _idStr: { $regex: `${orderIdSuffix}$`, $options: "i" }
+          }
+        },
+        { $limit: 5 }
+      ]);
+      if (!matches || matches.length === 0) {
+        return res.status(404).json({ message: "Order not found for provided suffix" });
+      }
+      if (matches.length > 1) {
+        return res.status(409).json({ message: "Multiple orders matched suffix; provide a more specific identifier" });
+      }
+      const orderDoc = await Order.findById(matches[0]._id.toString());
+      if (!orderDoc) {
+        return res.status(404).json({ message: "Order not found after lookup" });
+      }
+      // Adjust order to lifetime/500
+      const newTotal = 500;
+      orderDoc.subtotal = newTotal;
+      orderDoc.total = newTotal;
+      if (Array.isArray(orderDoc.items) && orderDoc.items.length > 0) {
+        orderDoc.items[0].price = newTotal;
+        // Keep quantity as is (expected 1)
+        (orderDoc.items[0] as any).duration = 'lifetime';
+        (orderDoc.items[0] as any).type = 'membership';
+      }
+      await orderDoc.save();
+      // Find and adjust invoice
+      let invoiceDoc = null as any;
+      if (orderDoc.invoiceId) {
+        try {
+          invoiceDoc = await Invoice.findById(orderDoc.invoiceId as any);
+        } catch {
+          invoiceDoc = null;
+        }
+      }
+      if (!invoiceDoc) {
+        invoiceDoc = await Invoice.findOne({ orderId: orderDoc._id.toString() });
+      }
+      if (invoiceDoc) {
+        invoiceDoc.subtotal = newTotal;
+        invoiceDoc.total = newTotal;
+        if (Array.isArray(invoiceDoc.items) && invoiceDoc.items.length > 0) {
+          invoiceDoc.items[0].price = newTotal;
+          (invoiceDoc.items[0] as any).duration = 'lifetime';
+          (invoiceDoc.items[0] as any).type = 'membership';
+        }
+        await invoiceDoc.save();
+        // Ensure order links the invoice id consistently
+        try {
+          orderDoc.invoiceId = invoiceDoc._id.toString();
+          await orderDoc.save();
+        } catch {
+          // no-op
+        }
+      }
+      // Update user membership to lifetime
+      const rawUserId = (orderDoc as any).userId;
+      let memberUser = null as any;
+      if (rawUserId) {
+        // Try by ObjectId
+        try {
+          memberUser = await User.findById(rawUserId);
+        } catch {
+          memberUser = null;
+        }
+        if (!memberUser) {
+          memberUser = await User.findOne({
+            $or: [
+              { id: rawUserId },
+              { username: rawUserId },
+              { email: rawUserId }
+            ]
+          });
+        }
+      }
+      if (memberUser) {
+        memberUser.membership = {
+          tier: (Array.isArray(orderDoc.items) && orderDoc.items[0] && orderDoc.items[0].name?.includes('Diamond')) ? 'Diamond Paw' : 'Diamond Paw',
+          startDate: memberUser.membership?.startDate || new Date(),
+          expiryDate: new Date('9999-12-31T23:59:59.999Z'),
+          autoRenew: false,
+          lifetime: true
+        };
+        await memberUser.save();
+      }
+      return res.json({
+        message: "Order, invoice, and membership corrected to lifetime/500",
+        orderId: orderDoc._id.toString(),
+        invoiceId: invoiceDoc ? invoiceDoc._id.toString() : null,
+        userId: memberUser ? (memberUser._id as any)?.toString?.() : null
+      });
+    } catch (error: any) {
+      console.error("Admin fix membership order error:", error);
+      return res.status(500).json({
+        message: "Failed to fix membership order",
+        error: error?.message || "Unknown error"
+      });
     }
   });
 
@@ -3025,6 +3249,200 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin analytics (summary + time series)
+  app.get("/api/admin/analytics", async (req, res) => {
+    try {
+      // Accept userId from query param, header, or session
+      const sessionUserId = (req as any)?.session?.userId as string | undefined;
+      const headerUserId = (req.headers["x-user-id"] as string) || undefined;
+      const userId = (req.query.userId as string) || headerUserId || sessionUserId || "";
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Allow both Mongo ObjectId and username/email as user identifiers
+      let user: any = null;
+      try {
+        const isValidId = (() => {
+          try {
+            // Lazy check without importing mongoose: valid 24-hex string
+            return typeof userId === "string" && /^[a-fA-F0-9]{24}$/.test(userId);
+          } catch {
+            return false;
+          }
+        })();
+        user = isValidId
+          ? await User.findById(userId)
+          : await User.findOne({ $or: [{ username: userId }, { email: userId }] });
+      } catch (err) {
+        // If a CastError or any DB error occurs, treat as not found below
+        user = null;
+      }
+      if (!user || String(user.role || "").toLowerCase() !== "admin") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      // Filters for valid orders (exclude cancelled/refunded)
+      const validOrderFilter: any = { status: { $nin: ["Cancelled", "Refunded"] } };
+
+      // Summary (resilient to partial failures)
+      let totalUsers = 0;
+      let totalProducts = 0;
+      let totalOrders = 0;
+      let totalRevenue = 0;
+      try {
+        totalUsers = await User.countDocuments();
+      } catch (err) {
+        console.warn("Analytics: failed to count users", err instanceof Error ? err.message : err);
+      }
+      try {
+        totalProducts = await Product.countDocuments({ isActive: true });
+      } catch (err) {
+        console.warn("Analytics: failed to count products", err instanceof Error ? err.message : err);
+      }
+      try {
+        totalOrders = await Order.countDocuments(validOrderFilter);
+      } catch (err) {
+        console.warn("Analytics: failed to count orders", err instanceof Error ? err.message : err);
+      }
+      try {
+        const revenueAgg = await Order.aggregate([
+          { $match: validOrderFilter },
+          { $group: { _id: null, revenue: { $sum: { $ifNull: ["$total", 0] } } } },
+        ]);
+        totalRevenue = revenueAgg?.[0]?.revenue || 0;
+      } catch (err) {
+        console.warn("Analytics: failed to aggregate revenue", err instanceof Error ? err.message : err);
+      }
+
+      // Time window: last 30 days (inclusive of today)
+      const now = new Date();
+      const start = new Date();
+      start.setDate(now.getDate() - 29);
+      start.setHours(0, 0, 0, 0);
+
+      // Daily orders count and revenue
+      let dailyAgg: any[] = [];
+      try {
+        dailyAgg = await Order.aggregate([
+          { $match: { ...validOrderFilter, createdAt: { $gte: start } } },
+          {
+            $group: {
+              _id: {
+                y: { $year: "$createdAt" },
+                m: { $month: "$createdAt" },
+                d: { $dayOfMonth: "$createdAt" },
+              },
+              orders: { $sum: 1 },
+              revenue: { $sum: { $ifNull: ["$total", 0] } },
+            },
+          },
+          { $sort: { "_id.y": 1, "_id.m": 1, "_id.d": 1 } },
+        ]);
+      } catch (err) {
+        console.warn("Analytics: failed to aggregate daily metrics", err instanceof Error ? err.message : err);
+        dailyAgg = [];
+      }
+
+      // Normalize to continuous days
+      const byDateKey: Record<string, { orders: number; revenue: number }> = {};
+      dailyAgg.forEach((doc: any) => {
+        const key = `${doc._id.y}-${String(doc._id.m).padStart(2, "0")}-${String(doc._id.d).padStart(2, "0")}`;
+        byDateKey[key] = { orders: doc.orders, revenue: doc.revenue };
+      });
+
+      const daily: Array<{ date: string; orders: number; revenue: number }> = [];
+      const cursor = new Date(start);
+      while (cursor <= now) {
+        const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+        daily.push({
+          date: key,
+          orders: byDateKey[key]?.orders || 0,
+          revenue: byDateKey[key]?.revenue || 0,
+        });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+
+      // Top products by quantity in orders
+      // items may contain productId or name; try productId first, fallback to name
+      let topProductsAgg: any[] = [];
+      try {
+        topProductsAgg = await Order.aggregate([
+          { $match: validOrderFilter },
+          { $unwind: { path: "$items", preserveNullAndEmptyArrays: false } },
+          {
+            $group: {
+              _id: {
+                productId: { $ifNull: ["$items.productId", null] },
+                name: { $ifNull: ["$items.name", null] },
+              },
+              quantity: { $sum: { $ifNull: ["$items.quantity", 1] } },
+              revenue: {
+                $sum: {
+                  $multiply: [
+                    { $ifNull: ["$items.quantity", 1] },
+                    { $ifNull: ["$items.price", 0] },
+                  ],
+                },
+              },
+            },
+          },
+          { $sort: { quantity: -1, revenue: -1 } },
+          { $limit: 5 },
+        ]);
+      } catch (err) {
+        console.warn("Analytics: failed to aggregate top products", err instanceof Error ? err.message : err);
+        topProductsAgg = [];
+      }
+
+      // Try to enrich with product info when productId exists
+      const productIds = topProductsAgg
+        .map((p: any) => p._id.productId)
+        .filter((id: any) => !!id);
+      const productsMap: Record<string, any> = {};
+      if (productIds.length) {
+        try {
+          const prods = await Product.find({ _id: { $in: productIds } })
+            .select("_id name image price slug")
+            .lean();
+          prods.forEach((p: any) => {
+            productsMap[String(p._id)] = p;
+          });
+        } catch (err) {
+          console.warn("Analytics: failed to fetch product details", err instanceof Error ? err.message : err);
+        }
+      }
+
+      const topProducts = topProductsAgg.map((p: any) => {
+        const prod =
+          p._id.productId && productsMap[String(p._id.productId)]
+            ? productsMap[String(p._id.productId)]
+            : null;
+        return {
+          productId: p._id.productId || null,
+          name: prod?.name || p._id.name || "Unknown",
+          image: prod?.image || null,
+          slug: prod?.slug || null,
+          quantity: p.quantity,
+          revenue: p.revenue,
+        };
+      });
+
+      res.json({
+        summary: {
+          totalUsers,
+          totalProducts,
+          totalOrders,
+          totalRevenue,
+        },
+        daily, // last 30 days [{ date, orders, revenue }]
+        topProducts, // top 5 by quantity
+      });
+    } catch (error) {
+      console.error("Admin analytics error:", error);
+      res.status(500).json({ message: "Failed to fetch admin analytics" });
+    }
+  });
   // GET all users (admin only)
   app.get("/api/admin/users", async (req, res) => {
     try {
@@ -4022,11 +4440,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/addresses/user/:userId", async (req, res) => {
     try {
       const { userId } = req.params;
-      const addresses = await Address.find({ userId }).sort({ isDefault: -1, createdAt: -1 });
+      console.log('[Address API] Fetching addresses for userId:', userId, 'Type:', typeof userId);
+      
+      // Try to find addresses with this userId (exact match)
+      let addresses = await Address.find({ userId }).sort({ isDefault: -1, createdAt: -1 });
+      console.log(`[Address API] Found ${addresses.length} addresses with exact userId match`);
+      
+      // If no addresses found, try to find all addresses and check their userIds for debugging
+      if (addresses.length === 0) {
+        console.log('[Address API] No addresses found with exact match. Checking all addresses in database...');
+        const allAddresses = await Address.find({}).limit(10);
+        console.log('[Address API] Sample userIds in database:', allAddresses.map(a => ({ 
+          id: a._id, 
+          userId: a.userId, 
+          userIdType: typeof a.userId 
+        })));
+        
+        // Try with userId as string (in case it was stored differently)
+        addresses = await Address.find({ userId: String(userId) }).sort({ isDefault: -1, createdAt: -1 });
+        console.log(`[Address API] Found ${addresses.length} addresses with String(userId) match`);
+      }
+      
       res.json(addresses);
     } catch (error) {
-      console.error('Error fetching addresses:', error);
-      res.status(500).json({ message: "Failed to fetch addresses" });
+      console.error('[Address API] Error fetching addresses:', error);
+      res.status(500).json({ message: "Failed to fetch addresses", error: String(error) });
     }
   });
 
@@ -4035,13 +4473,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { userId, fullName, phone, addressLine1, addressLine2, city, region, province, postCode, country, isDefault, label } = req.body;
 
-      console.log('Creating address for user:', userId);
-      console.log('Address data:', { fullName, phone, addressLine1, city, region, province, postCode, country });
+      // Ensure userId is a string for consistency
+      const normalizedUserId = String(userId);
+      console.log('[Address API] Creating address for user:', normalizedUserId, 'Original:', userId);
+      console.log('[Address API] Address data:', { fullName, phone, addressLine1, city, region, province, postCode, country });
 
       // Validate required fields
-      if (!userId || !fullName || !phone || !addressLine1 || !city || !postCode || !country) {
+      if (!normalizedUserId || !fullName || !phone || !addressLine1 || !city || !postCode || !country) {
         const missingFields = [];
-        if (!userId) missingFields.push('userId');
+        if (!normalizedUserId) missingFields.push('userId');
         if (!fullName) missingFields.push('fullName');
         if (!phone) missingFields.push('phone');
         if (!addressLine1) missingFields.push('addressLine1');
@@ -4055,11 +4495,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // If this address is set as default, unset all other default addresses for this user
       if (isDefault) {
-        await Address.updateMany({ userId }, { isDefault: false });
+        await Address.updateMany({ userId: normalizedUserId }, { isDefault: false });
       }
 
       const newAddress = new Address({
-        userId,
+        userId: normalizedUserId,
         fullName,
         phone,
         addressLine1,
@@ -5826,15 +6266,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(response);
     } catch (error) {
-      console.error('AI聊天错误:', error);
+      console.error('AI chat error:', error);
       res.status(500).json({ 
-        error: '抱歉，AI服务暂时不可用。请稍后再试或联系人工客服。',
+        error: 'Sorry, AI service is temporarily unavailable. Please try again later or contact customer service.',
         fallback: true 
       });
     }
   });
 
-  // 获取推荐产品
+  // Get recommended products
   app.get('/api/ai-chat/recommended-products', async (req, res) => {
     try {
       const { category, limit } = req.query;
@@ -5844,18 +6284,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       res.json({ products });
     } catch (error) {
-      console.error('获取推荐产品错误:', error);
-      res.status(500).json({ error: '无法获取推荐产品' });
+      console.error('Error getting recommended products:', error);
+      res.status(500).json({ error: 'Failed to get recommended products' });
     }
   });
 
-  // 智能产品搜索
+  // Smart product search
   app.get('/api/ai-chat/search-products', async (req, res) => {
     try {
       const { q, limit } = req.query;
       
       if (!q || typeof q !== 'string') {
-        return res.status(400).json({ error: '请提供搜索关键词' });
+        return res.status(400).json({ error: 'Please provide search keywords' });
       }
 
       const products = await searchProducts(
@@ -5865,26 +6305,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ products, query: q });
     } catch (error) {
-      console.error('产品搜索错误:', error);
-      res.status(500).json({ error: '搜索失败' });
+      console.error('Product search error:', error);
+      res.status(500).json({ error: 'Search failed' });
     }
   });
 
   // Chat History Routes
 
-  // 获取或创建会话ID
+  // Get or create session ID
   app.post('/api/chat/session', async (req, res) => {
     try {
       const { userId, sessionId } = req.body;
       
       let conversation = null;
       
-      // 如果提供了 sessionId，尝试查找现有会话
+      // If sessionId is provided, try to find existing conversation
       if (sessionId) {
         conversation = await ChatConversation.findOne({ sessionId });
       }
       
-      // 如果提供了 userId 且没有找到会话，尝试通过 userId 查找（最近24小时内的）
+      // If userId is provided and no conversation found, try to find by userId (within last 24 hours)
       if (!conversation && userId) {
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         conversation = await ChatConversation.findOne({
@@ -5893,7 +6333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }).sort({ lastMessageAt: -1 });
       }
 
-      // 如果没有找到，创建新会话
+      // If not found, create new conversation
       if (!conversation) {
         const newSessionId = sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         conversation = await ChatConversation.create({
@@ -5909,18 +6349,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         conversationId: conversation._id.toString()
       });
     } catch (error) {
-      console.error('创建会话错误:', error);
-      res.status(500).json({ error: '无法创建会话' });
+      console.error('Error creating session:', error);
+      res.status(500).json({ error: 'Failed to create session' });
     }
   });
 
-  // 保存聊天消息
+  // Save chat message
   app.post('/api/chat/messages', async (req, res) => {
     try {
       const { conversationId, sessionId, userId, text, sender, status, products } = req.body;
 
       if (!conversationId || !text || !sender) {
-        return res.status(400).json({ error: '缺少必要参数' });
+        return res.status(400).json({ error: 'Missing required parameters' });
       }
 
       const message = await ChatMessage.create({
@@ -5934,7 +6374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timestamp: new Date()
       });
 
-      // 更新会话信息
+      // Update conversation info
       await ChatConversation.findByIdAndUpdate(conversationId, {
         lastMessageAt: new Date(),
         $inc: { messageCount: 1 }
@@ -5942,12 +6382,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ success: true, messageId: message._id.toString() });
     } catch (error) {
-      console.error('保存消息错误:', error);
-      res.status(500).json({ error: '无法保存消息' });
+      console.error('Error saving message:', error);
+      res.status(500).json({ error: 'Failed to save message' });
     }
   });
 
-  // 加载聊天历史
+  // Load chat history
   app.get('/api/chat/messages', async (req, res) => {
     try {
       const { sessionId, userId, conversationId } = req.query;
@@ -5957,7 +6397,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (conversationId) {
         query.conversationId = conversationId;
       } else if (sessionId) {
-        // 通过 sessionId 查找会话
+        // Find conversation by sessionId
         const conversation = await ChatConversation.findOne({ sessionId });
         if (conversation) {
           query.conversationId = conversation._id.toString();
@@ -5965,7 +6405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.json({ messages: [] });
         }
       } else if (userId) {
-        // 通过 userId 查找最近的会话
+        // Find recent conversation by userId
         const conversation = await ChatConversation.findOne({ userId })
           .sort({ lastMessageAt: -1 });
         if (conversation) {
@@ -5974,7 +6414,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.json({ messages: [] });
         }
       } else {
-        return res.status(400).json({ error: '请提供 sessionId、userId 或 conversationId' });
+        return res.status(400).json({ error: 'Please provide sessionId, userId, or conversationId' });
       }
 
       const messages = await ChatMessage.find(query)
@@ -5983,12 +6423,631 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ messages });
     } catch (error) {
-      console.error('加载消息错误:', error);
-      res.status(500).json({ error: '无法加载消息' });
+      console.error('Error loading messages:', error);
+      res.status(500).json({ error: 'Failed to load messages' });
     }
   });
 
-  // 清除聊天历史
+  // ==================== Pet Profile Management API ====================
+  
+  // Get all pets for a user
+  app.get('/api/pets', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const pets = await Pet.find({ userId, isActive: true })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      res.json({ pets });
+    } catch (error) {
+      console.error('Error fetching pets:', error);
+      res.status(500).json({ message: 'Failed to fetch pets' });
+    }
+  });
+
+  // Get a single pet by ID
+  app.get('/api/pets/:petId', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId } = req.params;
+      const pet = await Pet.findOne({ _id: petId, userId, isActive: true }).lean();
+
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      res.json({ pet });
+    } catch (error) {
+      console.error('Error fetching pet:', error);
+      res.status(500).json({ message: 'Failed to fetch pet' });
+    }
+  });
+
+  // Create a new pet
+  app.post('/api/pets', async (req, res) => {
+    try {
+      // Debug session information
+      const sessionId = req.sessionID;
+      const sessionData = req.session;
+      const userId = (req.session as any)?.userId;
+      
+      console.log('🔍 POST /api/pets - Session Debug:', {
+        sessionId: sessionId || 'NO SESSION ID',
+        hasSession: !!sessionData,
+        userId: userId || 'NO USER ID',
+        sessionKeys: sessionData ? Object.keys(sessionData) : [],
+        cookies: req.headers.cookie ? 'Present' : 'Missing',
+        origin: req.headers.origin,
+        referer: req.headers.referer
+      });
+      
+      if (!userId) {
+        console.error('❌ Unauthorized: No userId in session');
+        console.error('   Session ID:', sessionId);
+        console.error('   Session exists:', !!sessionData);
+        console.error('   Cookies present:', !!req.headers.cookie);
+        return res.status(401).json({ 
+          message: 'Unauthorized',
+          debug: process.env.NODE_ENV === 'development' ? {
+            sessionId: sessionId || 'NO SESSION ID',
+            hasSession: !!sessionData,
+            cookiesPresent: !!req.headers.cookie
+          } : undefined
+        });
+      }
+
+      const petData = {
+        ...req.body,
+        userId,
+      };
+
+      // Birthday removed from design: no conversion
+
+      const pet = new Pet(petData);
+      await pet.save();
+
+      res.status(201).json({ pet });
+    } catch (error: any) {
+      console.error('Error creating pet:', error);
+      
+      // Return more detailed error message
+      let errorMessage = 'Failed to create pet';
+      if (error.name === 'ValidationError') {
+        errorMessage = Object.values(error.errors || {}).map((e: any) => e.message).join(', ');
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      res.status(500).json({ message: errorMessage });
+    }
+  });
+
+  // Update a pet
+  app.put('/api/pets/:petId', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId } = req.params;
+      const updateData = { ...req.body };
+
+      const pet = await Pet.findOneAndUpdate(
+        { _id: petId, userId },
+        updateData,
+        { new: true, runValidators: true }
+      ).lean();
+
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      res.json({ pet });
+    } catch (error: any) {
+      console.error('Error updating pet:', error);
+      
+      // Return more detailed error message
+      let errorMessage = 'Failed to update pet';
+      if (error.name === 'ValidationError') {
+        errorMessage = Object.values(error.errors || {}).map((e: any) => e.message).join(', ');
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      res.status(500).json({ message: errorMessage });
+    }
+  });
+
+  // Delete a pet (soft delete)
+  app.delete('/api/pets/:petId', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId } = req.params;
+      const pet = await Pet.findOneAndUpdate(
+        { _id: petId, userId },
+        { isActive: false },
+        { new: true }
+      ).lean();
+
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      res.json({ message: 'Pet deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting pet:', error);
+      res.status(500).json({ message: 'Failed to delete pet' });
+    }
+  });
+
+  // Birthdays and birthday coupon endpoints removed in redesign
+
+  // ==================== Pet Health Records API ====================
+  
+  // Get health records for a pet
+  app.get('/api/pets/:petId/health-records', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId } = req.params;
+      
+      // Verify pet belongs to user
+      const pet = await Pet.findOne({ _id: petId, userId }).lean();
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      const records = await PetHealthRecord.find({ petId, userId })
+        .sort({ date: -1 })
+        .lean();
+
+      res.json({ records });
+    } catch (error) {
+      console.error('Error fetching health records:', error);
+      res.status(500).json({ message: 'Failed to fetch health records' });
+    }
+  });
+
+  // Create a health record
+  app.post('/api/pets/:petId/health-records', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId } = req.params;
+      
+      // Verify pet belongs to user
+      const pet = await Pet.findOne({ _id: petId, userId }).lean();
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      const recordData: any = {
+        ...req.body,
+        petId,
+        userId,
+      };
+
+      const recordDate = parseDateInput(recordData.date);
+      if (!recordDate) {
+        return res.status(400).json({ message: 'Invalid record date' });
+      }
+      recordData.date = recordDate;
+
+      const recordNextDueDate = parseDateInput(recordData.nextDueDate, { endOfDay: true });
+      if (recordNextDueDate) {
+        recordData.nextDueDate = recordNextDueDate;
+      } else if (recordData.nextDueDate) {
+        delete recordData.nextDueDate;
+      }
+
+      ['weight', 'temperature', 'healthScore', 'cost'].forEach((key) => {
+        if (recordData[key] !== undefined && recordData[key] !== null && recordData[key] !== '') {
+          const numericValue = Number(recordData[key]);
+          if (!isNaN(numericValue)) {
+            recordData[key] = numericValue;
+          } else {
+            delete recordData[key];
+          }
+        }
+      });
+
+      const record = new PetHealthRecord(recordData);
+      await record.save();
+
+      res.status(201).json({ record });
+    } catch (error) {
+      console.error('Error creating health record:', error);
+      res.status(500).json({ message: 'Failed to create health record' });
+    }
+  });
+
+  // Update a health record
+  app.put('/api/pets/:petId/health-records/:recordId', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId, recordId } = req.params;
+      
+      // Verify pet belongs to user
+      const pet = await Pet.findOne({ _id: petId, userId }).lean();
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      const updateData = { ...req.body };
+
+      // Convert date strings to Date if provided
+      if (updateData.date) {
+        const parsedDate = parseDateInput(updateData.date);
+        if (!parsedDate) {
+          return res.status(400).json({ message: 'Invalid record date' });
+        }
+        updateData.date = parsedDate;
+      }
+      if (updateData.nextDueDate) {
+        const parsedNextDue = parseDateInput(updateData.nextDueDate, { endOfDay: true });
+        if (parsedNextDue) {
+          updateData.nextDueDate = parsedNextDue;
+        } else {
+          delete updateData.nextDueDate;
+        }
+      }
+
+      ['weight', 'temperature', 'healthScore', 'cost'].forEach((key) => {
+        if (updateData[key] !== undefined && updateData[key] !== null && updateData[key] !== '') {
+          const numericValue = Number(updateData[key]);
+          if (!isNaN(numericValue)) {
+            updateData[key] = numericValue;
+          } else {
+            delete updateData[key];
+          }
+        }
+      });
+
+      const record = await PetHealthRecord.findOneAndUpdate(
+        { _id: recordId, petId, userId },
+        updateData,
+        { new: true, runValidators: true }
+      ).lean();
+
+      if (!record) {
+        return res.status(404).json({ message: 'Health record not found' });
+      }
+
+      res.json({ record });
+    } catch (error) {
+      console.error('Error updating health record:', error);
+      res.status(500).json({ message: 'Failed to update health record' });
+    }
+  });
+
+  // Delete a health record
+  app.delete('/api/pets/:petId/health-records/:recordId', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId, recordId } = req.params;
+      
+      // Verify pet belongs to user
+      const pet = await Pet.findOne({ _id: petId, userId }).lean();
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      const record = await PetHealthRecord.findOneAndDelete({ _id: recordId, petId, userId }).lean();
+
+      if (!record) {
+        return res.status(404).json({ message: 'Health record not found' });
+      }
+
+      res.json({ message: 'Health record deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting health record:', error);
+      res.status(500).json({ message: 'Failed to delete health record' });
+    }
+  });
+
+  // ==================== Pet Care Plans API ====================
+
+  app.get('/api/pets/:petId/care-plans', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId } = req.params;
+
+      const pet = await Pet.findOne({ _id: petId, userId }).lean();
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      const plans = await PetCarePlan.find({ petId, userId })
+        .sort({ status: 1, nextDueDate: 1, createdAt: -1 })
+        .lean();
+
+      res.json({ plans });
+    } catch (error) {
+      console.error('Error fetching care plans:', error);
+      res.status(500).json({ message: 'Failed to fetch care plans' });
+    }
+  });
+
+  app.post('/api/pets/:petId/care-plans', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId } = req.params;
+      const pet = await Pet.findOne({ _id: petId, userId }).lean();
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      const planData: any = {
+        ...req.body,
+        petId,
+        userId,
+      };
+
+      const startDate = parseDateInput(planData.startDate) || new Date();
+      planData.startDate = startDate;
+
+      const nextDueDate = parseDateInput(planData.nextDueDate ?? planData.startDate, { endOfDay: true }) ||
+        (() => {
+          const next = new Date(startDate);
+          next.setHours(23, 59, 59, 999);
+          return next;
+        })();
+      planData.nextDueDate = nextDueDate;
+
+      if (planData.customIntervalDays !== undefined && planData.customIntervalDays !== null && planData.customIntervalDays !== '') {
+        const interval = Number(planData.customIntervalDays);
+        planData.customIntervalDays = !isNaN(interval) && interval > 0 ? interval : undefined;
+      }
+
+      if (planData.reminderLeadDays !== undefined && planData.reminderLeadDays !== null && planData.reminderLeadDays !== '') {
+        const lead = Number(planData.reminderLeadDays);
+        planData.reminderLeadDays = !isNaN(lead) && lead >= 0 ? lead : 1;
+      }
+
+      if (typeof planData.remindersEnabled !== 'boolean') {
+        planData.remindersEnabled = true;
+      }
+
+      planData.status = computeCarePlanStatus(planData.nextDueDate);
+
+      const plan = new PetCarePlan(planData);
+      await plan.save();
+
+      res.status(201).json({ plan });
+    } catch (error) {
+      console.error('Error creating care plan:', error);
+      res.status(500).json({ message: 'Failed to create care plan' });
+    }
+  });
+
+  app.put('/api/pets/:petId/care-plans/:planId', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId, planId } = req.params;
+
+      const pet = await Pet.findOne({ _id: petId, userId }).lean();
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      const updateData: any = { ...req.body };
+
+      if (updateData.startDate) {
+        const parsedStart = parseDateInput(updateData.startDate);
+        if (parsedStart) {
+          updateData.startDate = parsedStart;
+        } else {
+          delete updateData.startDate;
+        }
+      }
+
+      if (updateData.nextDueDate) {
+        const parsedNext = parseDateInput(updateData.nextDueDate, { endOfDay: true });
+        if (parsedNext) {
+          updateData.nextDueDate = parsedNext;
+        } else {
+          delete updateData.nextDueDate;
+        }
+      }
+
+      if (updateData.customIntervalDays !== undefined && updateData.customIntervalDays !== null && updateData.customIntervalDays !== '') {
+        const interval = Number(updateData.customIntervalDays);
+        updateData.customIntervalDays = !isNaN(interval) && interval > 0 ? interval : undefined;
+      }
+
+      if (updateData.reminderLeadDays !== undefined && updateData.reminderLeadDays !== null && updateData.reminderLeadDays !== '') {
+        const lead = Number(updateData.reminderLeadDays);
+        updateData.reminderLeadDays = !isNaN(lead) && lead >= 0 ? lead : 1;
+      }
+
+      const plan = await PetCarePlan.findOneAndUpdate(
+        { _id: planId, petId, userId },
+        updateData,
+        { new: true, runValidators: true }
+      ).lean();
+
+      if (!plan) {
+        return res.status(404).json({ message: 'Care plan not found' });
+      }
+
+      const status = computeCarePlanStatus(plan.nextDueDate as Date | undefined);
+      if (plan.status !== status) {
+        await PetCarePlan.updateOne({ _id: plan._id }, { status });
+        plan.status = status;
+      }
+
+      res.json({ plan });
+    } catch (error) {
+      console.error('Error updating care plan:', error);
+      res.status(500).json({ message: 'Failed to update care plan' });
+    }
+  });
+
+  app.post('/api/pets/:petId/care-plans/:planId/complete', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId, planId } = req.params;
+
+      const plan = await PetCarePlan.findOne({ _id: planId, petId, userId });
+      if (!plan) {
+        return res.status(404).json({ message: 'Care plan not found' });
+      }
+
+      const now = new Date();
+      plan.lastCompletedAt = now;
+
+      const nextDueDate = calculateNextCarePlanDate(plan);
+
+      if (nextDueDate) {
+        plan.nextDueDate = nextDueDate;
+        plan.status = computeCarePlanStatus(nextDueDate);
+        if (plan.remindersEnabled === false) {
+          plan.remindersEnabled = true;
+        }
+      } else {
+        plan.nextDueDate = undefined;
+        plan.status = 'completed';
+        plan.remindersEnabled = false;
+      }
+
+      await plan.save();
+
+      res.json({ plan: plan.toObject() });
+    } catch (error) {
+      console.error('Error completing care plan:', error);
+      res.status(500).json({ message: 'Failed to update care plan status' });
+    }
+  });
+
+  app.delete('/api/pets/:petId/care-plans/:planId', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { petId, planId } = req.params;
+
+      const pet = await Pet.findOne({ _id: petId, userId }).lean();
+      if (!pet) {
+        return res.status(404).json({ message: 'Pet not found' });
+      }
+
+      const plan = await PetCarePlan.findOneAndDelete({ _id: planId, petId, userId }).lean();
+
+      if (!plan) {
+        return res.status(404).json({ message: 'Care plan not found' });
+      }
+
+      res.json({ message: 'Care plan deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting care plan:', error);
+      res.status(500).json({ message: 'Failed to delete care plan' });
+    }
+  });
+
+  // Get upcoming health reminders (vaccinations, checkups, etc.)
+  app.get('/api/pets/health-reminders', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const days = parseInt(req.query.days as string) || 30;
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfWindow = new Date(startOfToday);
+      endOfWindow.setDate(endOfWindow.getDate() + days);
+      endOfWindow.setHours(23, 59, 59, 999);
+
+      const records = await PetHealthRecord.find({
+        userId,
+        nextDueDate: { $exists: true, $ne: null, $gte: startOfToday, $lte: endOfWindow }
+      })
+        .sort({ nextDueDate: 1 })
+        .lean();
+
+      const carePlans = await PetCarePlan.find({
+        userId,
+        remindersEnabled: true,
+        status: { $ne: 'completed' },
+        nextDueDate: { $exists: true, $ne: null, $gte: startOfToday, $lte: endOfWindow }
+      })
+        .sort({ nextDueDate: 1 })
+        .lean();
+
+      const reminders = [
+        ...records
+          .filter((record) => record.nextDueDate)
+          .map((record) => ({
+            ...record,
+            reminderType: 'healthRecord' as const,
+          })),
+        ...carePlans
+          .filter((plan) => plan.nextDueDate)
+          .map((plan) => ({
+            ...plan,
+            reminderType: 'carePlan' as const,
+            recordType: 'care-plan',
+          })),
+      ].sort((a, b) => {
+        const aTime = a.nextDueDate ? new Date(a.nextDueDate).getTime() : Infinity;
+        const bTime = b.nextDueDate ? new Date(b.nextDueDate).getTime() : Infinity;
+        return aTime - bTime;
+      });
+
+      res.json({ reminders });
+    } catch (error) {
+      console.error('Error fetching health reminders:', error);
+      res.status(500).json({ message: 'Failed to fetch health reminders' });
+    }
+  });
+
+  // Clear chat history
   app.delete('/api/chat/messages', async (req, res) => {
     try {
       const { sessionId, userId, conversationId } = req.query;
@@ -5998,7 +7057,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (conversationId) {
         query.conversationId = conversationId;
       } else if (sessionId) {
-        // 通过 sessionId 查找会话
+        // Find conversation by sessionId
         const conversation = await ChatConversation.findOne({ sessionId });
         if (conversation) {
           query.conversationId = conversation._id.toString();
@@ -6006,7 +7065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.json({ success: true, deletedCount: 0 });
         }
       } else if (userId) {
-        // 通过 userId 查找最近的会话
+        // Find recent conversation by userId
         const conversation = await ChatConversation.findOne({ userId })
           .sort({ lastMessageAt: -1 });
         if (conversation) {
@@ -6015,13 +7074,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.json({ success: true, deletedCount: 0 });
         }
       } else {
-        return res.status(400).json({ error: '请提供 sessionId、userId 或 conversationId' });
+        return res.status(400).json({ error: 'Please provide sessionId, userId, or conversationId' });
       }
 
-      // 删除所有相关消息
+      // Delete all related messages
       const deleteResult = await ChatMessage.deleteMany(query);
 
-      // 更新会话信息
+      // Update conversation info
       if (conversationId) {
         await ChatConversation.findByIdAndUpdate(conversationId, {
           lastMessageAt: new Date(),
@@ -6051,8 +7110,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deletedCount: deleteResult.deletedCount 
       });
     } catch (error) {
-      console.error('清除消息错误:', error);
-      res.status(500).json({ error: '无法清除消息' });
+      console.error('Error clearing messages:', error);
+      res.status(500).json({ error: 'Failed to clear messages' });
     }
   });
 
