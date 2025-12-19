@@ -7491,6 +7491,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public database view endpoint for instructors/reviewers
+  app.get("/api/public/database-view", async (req, res) => {
+    try {
+      // MongoDB Statistics
+      const mongoStats = {
+        users: {
+          total: await User.countDocuments(),
+          members: await User.countDocuments({ "membership.tier": { $exists: true } }),
+          silverPaw: await User.countDocuments({ "membership.tier": "Silver Paw" }),
+          goldenPaw: await User.countDocuments({ "membership.tier": "Golden Paw" }),
+          diamondPaw: await User.countDocuments({ "membership.tier": "Diamond Paw" }),
+          admins: await User.countDocuments({ role: "admin" }),
+        },
+        products: {
+          total: await Product.countDocuments(),
+          active: await Product.countDocuments({ isActive: true }),
+          categories: await Category.countDocuments(),
+          brands: await Brand.countDocuments(),
+        },
+        orders: {
+          total: await Order.countDocuments(),
+          pending: await Order.countDocuments({ status: "pending" }),
+          processing: await Order.countDocuments({ status: "processing" }),
+          shipped: await Order.countDocuments({ status: "shipped" }),
+          delivered: await Order.countDocuments({ status: "delivered" }),
+          cancelled: await Order.countDocuments({ status: "cancelled" }),
+        },
+        carts: {
+          total: await Cart.countDocuments(),
+        },
+        coupons: {
+          total: await Coupon.countDocuments(),
+          active: await Coupon.countDocuments({ isActive: true }),
+        },
+        blogPosts: {
+          total: await BlogPost.countDocuments(),
+        },
+        chatConversations: {
+          total: await ChatConversation.countDocuments(),
+        },
+        pets: {
+          total: await Pet.countDocuments(),
+        },
+      };
+
+      // Sample data (limited to 10 items each for privacy)
+      const sampleData = {
+        recentUsers: await User.find({}, { username: 1, email: 1, role: 1, membership: 1, createdAt: 1 })
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .lean(),
+        recentProducts: await Product.find({}, { name: 1, price: 1, category: 1, brand: 1, stock: 1, isActive: 1 })
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .lean(),
+        recentOrders: await Order.find({}, { orderNumber: 1, userId: 1, totalAmount: 1, status: 1, createdAt: 1 })
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .lean(),
+        categories: await Category.find({}, { name: 1, slug: 1 }).lean(),
+        brands: await Brand.find({}, { name: 1, slug: 1 }).lean(),
+      };
+
+      res.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        mongodb: {
+          statistics: mongoStats,
+          sampleData: sampleData,
+        },
+        note: "This is a read-only view. Sample data is limited to 10 items per collection for privacy.",
+      });
+    } catch (error) {
+      console.error('Error fetching database view:', error);
+      res.status(500).json({ error: 'Failed to fetch database view' });
+    }
+  });
+
+  // Public Supabase view endpoint
+  app.get("/api/public/supabase-view", async (req, res) => {
+    try {
+      const supabase = getSupabaseClient();
+      
+      // Supabase info (read-only, no admin access needed)
+      const supabaseInfo = {
+        configured: !!supabase,
+        note: "Supabase is primarily used for authentication. User data and application data are stored in MongoDB.",
+        supabaseUrl: process.env.VITE_SUPABASE_URL ? 
+          process.env.VITE_SUPABASE_URL.replace(/\/$/, '') : "Not configured",
+        usage: "Authentication and user session management",
+      };
+
+      res.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        supabase: supabaseInfo,
+      });
+    } catch (error) {
+      console.error('Error fetching Supabase view:', error);
+      res.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        supabase: {
+          configured: false,
+          note: "Supabase is primarily used for authentication. Main data is stored in MongoDB.",
+        },
+      });
+    }
+  });
+
   const server = createServer(app);
   return server;
 }

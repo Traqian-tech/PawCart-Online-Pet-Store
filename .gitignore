@@ -10,6 +10,9 @@ coverage/
 dist/
 build/
 
+# Local development files (not needed for deployment)
+local-files/
+
 # Environment variables
 .env
 .env.local

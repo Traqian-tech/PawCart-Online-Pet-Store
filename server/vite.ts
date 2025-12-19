@@ -84,7 +84,8 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
+  // Build output is in dist/public (see vite.config.ts)
+  const distPath = path.resolve(import.meta.dirname, "..", "dist", "public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
@@ -92,10 +93,17 @@ export function serveStatic(app: Express) {
     );
   }
 
+  // Serve static files from dist/public
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  // This allows React Router (Wouter) to handle client-side routing
+  // Skip API routes - they should already be handled by registerRoutes
+  app.get("*", (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

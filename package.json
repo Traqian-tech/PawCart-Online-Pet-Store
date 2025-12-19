@@ -8,22 +8,7 @@
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "cross-env NODE_ENV=production node dist/index.js",
     "check": "tsc",
-    "check:env": "node check-env.js",
-    "translate-db": "cross-env NODE_ENV=development npx tsx server/translate-products.ts",
-    "import-products": "cross-env NODE_ENV=development npx tsx server/import-real-products.ts",
-    "check-images": "cross-env NODE_ENV=development npx tsx server/check-images.ts",
-    "fix-images": "cross-env NODE_ENV=development npx tsx server/fix-product-images.ts",
-    "convert-prices": "cross-env NODE_ENV=development npx tsx server/convert-prices-to-hkd.ts",
-    "check-users": "cross-env NODE_ENV=development npx tsx server/check-users.ts",
-    "mark-member-products": "cross-env NODE_ENV=development npx tsx server/mark-member-products.ts",
-    "membership-cron": "cross-env NODE_ENV=development npx tsx server/membership-cron.ts",
-    "verify-order-discounts": "cross-env NODE_ENV=development npx tsx server/verify-order-discounts.ts",
-    "cap:sync": "npm run build && npx cap sync",
-    "cap:copy": "npx cap copy",
-    "cap:open:ios": "npx cap open ios",
-    "cap:open:android": "npx cap open android",
-    "cap:add:ios": "npx cap add ios",
-    "cap:add:android": "npx cap add android"
+    "membership-cron": "cross-env NODE_ENV=development npx tsx server/membership-cron.ts"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",

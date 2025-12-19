@@ -1,12 +1,12 @@
 # PawCart - Online Pet Store E-commerce Platform
 
-A comprehensive full-stack e-commerce application for pet products, featuring a modern tech stack, gamification elements, membership system, and AI-powered customer support.
+A full-stack e-commerce application for pet products with membership system, wallet rewards, and customer support features.
 
 ## 🚀 Features
 
 ### Core E-commerce Features
 - 🛍️ **Complete Shopping Experience** - Product browsing, search, filtering, and sorting
-- 🛒 **Shopping Cart & Checkout** - Seamless cart management and secure checkout process
+- 🛒 **Shopping Cart & Checkout** - Cart management and checkout process
 - 📦 **Order Management** - Track orders, view order history, and manage deliveries
 - 💳 **Multiple Payment Methods** - Cash on delivery, wallet payment, and QR code payments
 - ⭐ **Product Reviews & Ratings** - Customer feedback and rating system
@@ -34,19 +34,16 @@ A comprehensive full-stack e-commerce application for pet products, featuring a 
 
 ### Customer Support
 - 🤖 **AI-Powered Chat** - Intelligent customer support chatbot
-- 📚 **Help Center** - Comprehensive FAQ and support articles
+- 📚 **Help Center** - FAQ and support articles
 - 💬 **Live Support** - Direct communication with support team
-- 📞 **Helpline** - Contact information and support channels
 
-### Additional Features
-- ❤️ **Wishlist** - Save favorite products for later
-- 🎯 **Product Recommendations** - AI-powered personalized recommendations
-- 🌍 **Multi-language Support** - Internationalization support
-- 💱 **Multi-currency** - Support for different currencies
-- 🎨 **Theme Customization** - Light/dark mode and color themes
-- 📊 **Admin Dashboard** - Comprehensive analytics and management tools
-- 🎁 **Coupon System** - Discount codes and promotional offers
-- 📧 **Email Notifications** - Order confirmations and updates
+### Admin Dashboard
+- 📊 **Analytics & Statistics** - View sales data, user analytics, and business insights
+- 👥 **User Management** - Manage users, memberships, and permissions
+- 📦 **Product Management** - Add, edit, and manage products and inventory
+- 🎫 **Coupon Management** - Create and manage discount codes and promotions
+- 📈 **Order Management** - Track and manage all orders and deliveries
+- 💰 **Wallet System Management** - Monitor wallet transactions and rewards
 
 ## 🛠️ Tech Stack
 
@@ -69,9 +66,8 @@ A comprehensive full-stack e-commerce application for pet products, featuring a 
 
 ### Authentication & Services
 - **Authentication**: Supabase Auth for user management
-- **Email Service**: Resend API (recommended) or SMTP
+- **Email Service**: SMTP
 - **AI Chat**: DeepSeek, OpenAI, Groq, or Kimi API support
-- **Image Processing**: Sharp for image optimization
 
 ## 📋 Prerequisites
 
@@ -97,7 +93,15 @@ npm install
 
 ### 3. Set Up Environment Variables
 
-Create a `.env` file in the root directory:
+You have two options:
+
+**Option 1: Use the provided `.env` file (Recommended)**
+- If the project includes a `.env` file, you can use it directly
+- Make sure to update the values with your own credentials
+
+**Option 2: Create a new `.env` file**
+
+Create a `.env` file in the root directory with the following variables:
 
 ```env
 # Database (Required)
@@ -115,8 +119,10 @@ NODE_ENV=development
 PORT=5000
 
 # Email Service (Optional - for password reset and notifications)
-RESEND_API_KEY=re_your_api_key_here
-FROM_EMAIL=onboarding@resend.dev
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASSWORD=your-app-password
 
 # AI Chat Service (Optional - for AI customer support)
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
@@ -124,20 +130,40 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
 ### 4. Set Up MongoDB Atlas
 
+You have two options:
+
+**Option 1: Use the provided database (Recommended for quick start)**
+- The project includes a pre-configured MongoDB Atlas connection
+- If you're using the provided `.env` file, the database is already configured
+- You can start using the application immediately without setting up your own database
+
+**Option 2: Set up your own MongoDB Atlas**
+
 1. Visit [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
 2. Create a free M0 cluster
 3. Add `0.0.0.0/0` in Network Access (for development)
 4. Create a database user
 5. Get connection string from Clusters > Connect > Connect your application
 6. Replace `<password>` and `<dbname>` in the connection string
+7. Update the `MONGODB_URI` in your `.env` file
 
 ### 5. Set Up Supabase
+
+You have two options:
+
+**Option 1: Use the provided database (Recommended for quick start)**
+- The project includes a pre-configured Supabase connection
+- If you're using the provided `.env` file, Supabase is already configured
+- You can start using the application immediately without setting up your own Supabase project
+
+**Option 2: Set up your own Supabase**
 
 1. Visit [Supabase](https://supabase.com)
 2. Create a new project
 3. Go to Settings > API
 4. Copy Project URL and anon public key
 5. Add your local URL (`http://localhost:5000/*`) in Authentication > URL Configuration
+6. Update `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in your `.env` file
 
 ### 6. Start Development Server
 
@@ -154,26 +180,19 @@ PawCart-Online-Pet-Store/
 ├── client/                 # Frontend React application
 │   ├── src/
 │   │   ├── components/    # React components
-│   │   │   ├── admin/     # Admin dashboard components
-│   │   │   ├── auth/      # Authentication components
-│   │   │   ├── layout/    # Layout components (header, footer)
-│   │   │   ├── product/   # Product-related components
-│   │   │   └── ui/        # shadcn/ui components
 │   │   ├── contexts/      # React contexts (cart, wallet, auth)
 │   │   ├── hooks/         # Custom React hooks
 │   │   ├── lib/           # Utility functions and configurations
-│   │   ├── pages/         # Page components
-│   │   └── App.tsx        # Main app component with routing
+│   │   └── pages/         # Page components
 │   └── public/            # Static assets
 ├── server/                # Backend Express server
 │   ├── routes.ts          # API routes
 │   ├── wallet-routes.ts   # Wallet system routes
 │   ├── mongodb.ts         # MongoDB connection
-│   ├── supabase-client.ts # Supabase client
 │   └── index.ts           # Server entry point
 ├── shared/                # Shared code between frontend and backend
 │   └── models.ts          # MongoDB schemas and TypeScript types
-├── attached_assets/       # Product images and static assets
+├── render.yaml            # Render deployment configuration
 └── package.json           # Dependencies and scripts
 ```
 
@@ -188,60 +207,93 @@ PawCart-Online-Pet-Store/
 - `npm start` - Start production server
 
 ### Utilities
-- `npm run check:env` - Verify environment variables configuration
-- `npm run mark-member-products` - Mark products as member-exclusive
 - `npm run membership-cron` - Run membership email notifications
-- `npm run verify-order-discounts` - Verify order discount calculations
 
 ## 🌐 Deployment
 
-### Quick Deployment Options
+### Render Cloud Deployment
 
-The application can be deployed to various platforms:
+This project is **deployed and running** on [Render](https://render.com), a cloud platform for hosting web applications.
 
-#### Render (Recommended for Beginners)
-- **Guide**: See [RENDER_DEPLOYMENT.md](./docs/deployment/RENDER_DEPLOYMENT.md)
-- **Quick Guide**: See [RENDER_快速部署.md](./docs/deployment/RENDER_快速部署.md) (Chinese)
-- **Free Tier**: Available with sleep mode after 15 minutes
+**🌐 Live Production Site**: https://pawcart-online-pet-store.onrender.com/
 
-#### Railway
-- **Guide**: See [DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md)
-- **Free Tier**: $5 credit monthly
+The application is fully functional and accessible at the above URL. You can visit it to see the live version of PawCart.
 
-#### Fly.io
-- **Guide**: See [DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md)
-- **Global Edge**: Fast worldwide deployment
+#### For Local Development
 
-#### Vercel + Railway
-- Frontend on Vercel, Backend on Railway
-- See [DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md) for details
+If you want to deploy your own instance or make changes, follow these steps:
 
-### Environment Variables for Production
+1. **Push your code to GitHub**
 
-Ensure all required environment variables are set in your deployment platform:
+2. **Create a new Web Service on Render**
+   - Connect your GitHub repository
+   - Render will automatically detect the `render.yaml` configuration file
 
-**Required:**
-- `MONGODB_URI`
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- `SESSION_SECRET`
-- `NODE_ENV=production`
-- `PORT` (varies by platform: Render uses 10000)
+3. **Set Environment Variables in Render Dashboard**
 
-**Optional:**
-- `RESEND_API_KEY` and `FROM_EMAIL` (for email features)
-- `DEEPSEEK_API_KEY` or other AI API keys (for AI chat)
+   **Required:**
+   - `MONGODB_URI` - Your MongoDB Atlas connection string
+   - `VITE_SUPABASE_URL` - Your Supabase project URL
+   - `VITE_SUPABASE_ANON_KEY` - Your Supabase anon key
+   - `SESSION_SECRET` - A random 32-character secret key
+   - `NODE_ENV=production`
+   - `PORT=10000` (Render uses port 10000)
 
-### Post-Deployment Configuration
+   **Optional:**
+   - `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD` (for email features)
+   - `DEEPSEEK_API_KEY` or other AI API keys (for AI chat)
 
-1. **Supabase Redirect URLs**: Add your deployment URL to Supabase Authentication > URL Configuration
-2. **MongoDB Network Access**: Ensure your deployment platform IPs are allowed (or use `0.0.0.0/0` for development)
-3. **Email Service**: Configure Resend or SMTP for production email features
+4. **Configure Supabase**
+   - Add your Render URL (`https://pawcart-online-pet-store.onrender.com/*`) to Supabase Authentication > URL Configuration
 
-For detailed deployment instructions, see:
-- [QUICK_START.md](./docs/quick-start/QUICK_START.md) - Quick deployment guide
-- [DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md) - Complete deployment guide
-- [ENV_VARIABLES.md](./docs/configuration/ENV_VARIABLES.md) - Environment variables guide
+5. **Deploy**
+   - Render will automatically build and deploy your application
+   - The first deployment may take a few minutes
+
+#### Configuration File
+
+The project includes `render.yaml` which configures:
+- Build command: `npm install && npm run build`
+- Start command: `npm start`
+- Environment: Node.js
+- Port: 10000
+
+### Database Access
+
+For instructors or reviewers who need to view the database data:
+
+#### 🌐 Direct Database View (Recommended)
+
+**Click here to view database data directly**: https://pawcart-online-pet-store.onrender.com/database-view
+
+This public read-only page provides:
+- **Database Statistics**: Overview of users, products, orders, and more
+- **Sample Data**: Recent users, products, and orders (limited to 10 items each for privacy)
+- **MongoDB Details**: Complete collection statistics and sample data
+- **Supabase Details**: Authentication user statistics
+- **No Login Required**: Direct access without any credentials
+
+The page includes tabs for:
+- Overview: Key statistics and membership distribution
+- Users: User statistics and recent user samples
+- Products: Product statistics, categories, and brands
+- Orders: Order statistics and recent order samples
+- MongoDB Details: Complete MongoDB collection information
+- Supabase Details: Authentication system information
+
+#### Alternative Access Methods
+
+**MongoDB Atlas**:
+- The MongoDB database is hosted on MongoDB Atlas
+- Connection string available in the `.env` file (MONGODB_URI)
+- For direct database access, contact the project owner
+
+**Supabase**:
+- Supabase is primarily used for authentication
+- Main application data is stored in MongoDB
+- Project URL and credentials available in the `.env` file
+
+**Note**: The public database view page provides read-only access to database statistics and sample data. For full database access credentials, please contact the project owner at boqianjlu@gmail.com
 
 ## 🎯 Key Features in Detail
 
@@ -270,37 +322,20 @@ Wallet credits can be used to pay up to:
 - 50% (Golden Paw)
 - 70% (Diamond Paw)
 
-### Product Categories
-
-- Cat Food (Dry, Wet, Treats)
-- Dog Food (Dry, Wet, Treats)
-- Pet Toys (Interactive, Plush, Puzzle)
-- Grooming Products (Shampoo, Brushes, Nail Clippers)
-- Health Care (Supplements, Medications, First Aid)
-- Accessories (Collars, Leashes, Beds, Carriers)
-
 ## 🔧 Configuration
 
 ### Email Service Setup
 
-For password reset and membership notifications:
+For password reset and membership notifications, configure SMTP:
 
-**Option 1: Resend (Recommended)**
-1. Sign up at [Resend](https://resend.com)
-2. Create API key
-3. Add to `.env`:
-   ```env
-   RESEND_API_KEY=re_your_key
-   FROM_EMAIL=onboarding@resend.dev
-   ```
-
-**Option 2: SMTP (Gmail/Outlook)**
 ```env
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASSWORD=your-app-password
 ```
+
+**Note**: For Gmail, you need to use an App Password instead of your regular password. Generate one in your Google Account settings under Security > 2-Step Verification > App passwords.
 
 ### AI Chat Setup
 
@@ -325,39 +360,8 @@ The application includes test membership accounts:
 ### Admin Access
 
 Default admin credentials:
-- Email: `admin@petshop.com`
+- Email: `admin`
 - Password: `admin123`
-
-## 📚 Documentation
-
-Comprehensive documentation is available in the [`docs/`](./docs/) directory:
-
-- **Quick Start**: [docs/quick-start/QUICK_START.md](./docs/quick-start/QUICK_START.md) - Quick deployment guide
-- **Deployment**: [docs/deployment/DEPLOYMENT_GUIDE.md](./docs/deployment/DEPLOYMENT_GUIDE.md) - Complete deployment instructions
-- **Configuration**: [docs/configuration/ENV_VARIABLES.md](./docs/configuration/ENV_VARIABLES.md) - Environment variables reference
-- **Membership**: [docs/membership/README_MEMBERSHIP_FEATURES.md](./docs/membership/README_MEMBERSHIP_FEATURES.md) - Membership system guide
-- **Wallet**: [docs/wallet/WALLET_SYSTEM_SUMMARY.md](./docs/wallet/WALLET_SYSTEM_SUMMARY.md) - Wallet system documentation
-- **Customer Support**: [docs/features/CUSTOMER_SUPPORT_README.md](./docs/features/CUSTOMER_SUPPORT_README.md) - Customer support features
-
-See [docs/README.md](./docs/README.md) for a complete documentation index.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow TypeScript best practices
-- Use ESLint and Prettier for code formatting
-- Write meaningful commit messages
-- Test thoroughly before submitting PRs
-- Update documentation for new features
 
 ## 🐛 Troubleshooting
 
@@ -382,7 +386,6 @@ Contributions are welcome! Please follow these steps:
 - Verify email service credentials
 - Check spam folder
 - For Gmail, use App Password instead of regular password
-- See [docs/features/EMAIL_SETUP_GUIDE.md](./docs/features/EMAIL_SETUP_GUIDE.md) for detailed setup
 
 ## 📄 License
 
@@ -391,7 +394,7 @@ This project is licensed under the MIT License.
 ## 📧 Contact
 
 For questions, support, or collaboration:
-- Email: saadbintofayeltahsin@gmail.com
+- Email: boqianjlu@gmail.com
 
 ## 🙏 Acknowledgments
 

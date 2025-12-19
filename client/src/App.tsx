@@ -77,6 +77,7 @@ import LuckyWheelGame from "@/pages/games/lucky-wheel";
 import MatchThreeGame from "@/pages/games/match-three";
 import PetQuizGame from "@/pages/games/pet-quiz";
 import DebugClearQuiz from "@/pages/debug-clear-quiz";
+import DatabaseViewPage from "@/pages/database-view";
 import { SidebarProvider } from "@/contexts/sidebar-context";
 import { ChatProvider } from "@/contexts/chat-context";
 import { FloatingCart } from "@/components/ui/floating-cart";
@@ -171,6 +172,7 @@ function AppRoutes() {
         <Route path="/wallet/games/quiz" component={PetQuizGame} />
         <Route path="/pets" component={PetsPage} />
         <Route path="/debug/clear-quiz" component={DebugClearQuiz} />
+        <Route path="/database-view" component={DatabaseViewPage} />
         <Route component={NotFoundPage} />
       </Switch>
       <MobileBottomNav />

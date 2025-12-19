@@ -20,7 +20,6 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
@@ -44,7 +43,7 @@ export default defineConfig({
     watch: {
       usePolling: false,
       interval: 1000,
-      ignored: ['**/node_modules/**', '**/uploads/**', '**/attached_assets/**']
+      ignored: ['**/node_modules/**', '**/uploads/**']
     },
     hmr: {
       overlay: false
