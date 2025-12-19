@@ -9,7 +9,6 @@ import NavigationSidebar from '@/components/layout/sidebar';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
 
 const membershipTiers = [
   {
@@ -69,15 +68,8 @@ export default function PrivilegeClubPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
-  // Fetch current membership
-  const userId = (user as any)?._id || (user as any)?.id || user?.id;
-  
-  const { data: membershipData } = useQuery({
-    queryKey: [`/api/membership/${userId}`],
-    enabled: !!userId,
-  });
-
-  const currentMembership = membershipData?.membership;
+  // Get current membership directly from user object (more reliable than separate query)
+  const currentMembership = (user as any)?.membership;
 
   // Get membership price
   const getMembershipPrice = (tierName: string) => {
@@ -101,15 +93,22 @@ export default function PrivilegeClubPage() {
     }
 
     // Check if user has an active (non-expired) membership
-    const hasActiveMembership = currentMembership && new Date(currentMembership.expiryDate) > new Date();
-    
-    if (hasActiveMembership) {
-      toast({
-        title: "Active membership",
-        description: "You already have an active membership.",
-        variant: "destructive",
-      });
-      return;
+    // Only check if membership exists and is not expired
+    if (currentMembership && currentMembership.tier && currentMembership.expiryDate) {
+      const expiryDate = new Date(currentMembership.expiryDate);
+      const isLifetime = (currentMembership as any).lifetime === true || expiryDate.getFullYear() >= 9999;
+      const isExpired = !isLifetime && expiryDate <= new Date();
+      
+      // Only block if membership is active (not expired)
+      if (!isExpired) {
+        toast({
+          title: "Already Have Active Membership",
+          description: `You already have an active ${currentMembership.tier} membership${isLifetime ? ' (Lifetime)' : ` that expires on ${expiryDate.toLocaleDateString()}`}. Please cancel your current membership first or wait for it to expire before purchasing a new one.`,
+          variant: "destructive",
+          duration: 8000,
+        });
+        return;
+      }
     }
 
     // Create membership order directly (skip cart)

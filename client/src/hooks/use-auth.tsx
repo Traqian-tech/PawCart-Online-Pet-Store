@@ -12,6 +12,27 @@ interface User {
   profilePicture?: string;
 }
 
+// Helper: normalize membership so expired memberships are treated as none on the client
+function normalizeUserMembership(rawUser: any): any {
+  if (!rawUser || !rawUser.membership) return rawUser;
+
+  const membership = rawUser.membership;
+  if (!membership.expiryDate) return rawUser;
+
+  const expiry = new Date(membership.expiryDate);
+  const isLifetime =
+    membership.lifetime === true ||
+    (expiry instanceof Date && !isNaN(expiry.getTime()) && expiry.getFullYear() >= 9999);
+
+  // If not lifetime and already expired (or invalid date), drop membership on client
+  if (!isLifetime && (!expiry || isNaN(expiry.getTime()) || expiry <= new Date())) {
+    const { membership: _ignored, ...rest } = rawUser;
+    return rest;
+  }
+
+  return rawUser;
+}
+
 interface AuthContextType {
   user: User | null;
   signIn: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
@@ -47,7 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (storedUser) {
         try {
           const parsedUser = JSON.parse(storedUser);
-          setUser(parsedUser);
+          const normalizedUser = normalizeUserMembership(parsedUser);
+          setUser(normalizedUser);
           // Only set authMethod to 'supabase' if explicitly set
           // MongoDB users will have authMethod as null, undefined, or not 'supabase'
           const userAuthMethod = parsedUser.authMethod === 'supabase' ? 'supabase' : 
@@ -101,7 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // This ensures MongoDB users use MongoDB API for password changes
         const mongoDBAuthMethod: null = null;
         
-        setUser(data.user);
+        const normalizedUser = normalizeUserMembership(data.user);
+        setUser(normalizedUser);
         setAuthMethod(mongoDBAuthMethod);
         
         // Update connection stats (track MongoDB logins separately)
@@ -114,8 +137,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         safeSetItem('connection_stats', JSON.stringify(stats));
         
         // Persist user to localStorage with null authMethod (MongoDB user)
-        safeSetItem(AUTH_STORAGE_KEY, JSON.stringify({ ...data.user, authMethod: mongoDBAuthMethod }));
-        console.log('MongoDB user signed in:', data.user);
+        safeSetItem(AUTH_STORAGE_KEY, JSON.stringify({ ...normalizedUser, authMethod: mongoDBAuthMethod }));
+        console.log('MongoDB user signed in:', normalizedUser);
         return { success: true };
       } else {
         return { success: false, message: data.message };
@@ -179,7 +202,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         // The API returns the user object directly, not wrapped in { user: ... }
-        const updatedUser = { ...user, ...data };
+        const mergedUser = { ...user, ...data };
+        const updatedUser = normalizeUserMembership(mergedUser);
         setUser(updatedUser);
         safeSetItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
         console.log('✅ User data refreshed from server successfully!');

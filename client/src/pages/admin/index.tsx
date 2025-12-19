@@ -34,7 +34,7 @@ import {
   Package, FileEdit, Plus, Trash2, ArrowLeft, Search, 
   Filter, Grid, List, Eye, Edit, Save, X, 
   Home, PawPrint, BookOpen, Speaker, Grid3X3, Coffee, Tag, ShoppingCart, Image as ImageIcon,
-  Users, Mail, Phone, Calendar, Shield, Ban, FileCheck, DollarSign
+  Users, Mail, Phone, Calendar, Shield, Ban, FileCheck, DollarSign, Reply
 } from "lucide-react";
 
 // Form validation schemas
@@ -294,6 +294,9 @@ export default function AdminPage() {
   const [requestPriorityFilter, setRequestPriorityFilter] = useState<'all' | ServiceRequest['priority']>('all');
   const [requestEdits, setRequestEdits] = useState<Record<string, { status: ServiceRequest['status']; priority: ServiceRequest['priority']; response: string }>>({});
   const [updatingRequestId, setUpdatingRequestId] = useState<string | null>(null);
+  const [replyingToMessage, setReplyingToMessage] = useState<any | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
 
   // All queries declared at the top level (not conditionally)
   const { data: products = [], isLoading: isLoadingProducts, refetch: refetchProducts } = useQuery({
@@ -353,6 +356,12 @@ export default function AdminPage() {
 
   const { data: requests = [], isLoading: isLoadingRequests, refetch: refetchRequests } = useQuery<ServiceRequest[]>({
     queryKey: ['/api/requests'],
+    enabled: !!user && user.role === 'admin',
+  });
+
+  // Contact messages query
+  const { data: contactMessages = [], isLoading: isLoadingMessages, refetch: refetchMessages } = useQuery<any[]>({
+    queryKey: ['/api/admin/contact-messages'],
     enabled: !!user && user.role === 'admin',
   });
 
@@ -1356,7 +1365,7 @@ export default function AdminPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-10 lg:w-auto lg:grid-cols-10 bg-white border border-gray-200">
+          <TabsList className="grid w-full grid-cols-11 lg:w-auto lg:grid-cols-11 bg-white border border-gray-200">
             <TabsTrigger value="orders" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <ShoppingCart className="w-4 h-4 mr-2" />
               Orders
@@ -1364,6 +1373,15 @@ export default function AdminPage() {
             <TabsTrigger value="users" className="data-[state=active]:bg-green-600 data-[state=active]:text-white">
               <Users className="w-4 h-4 mr-2" />
               Users
+            </TabsTrigger>
+            <TabsTrigger value="messages" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white relative">
+              <Mail className="w-4 h-4 mr-2" />
+              Messages
+              {contactMessages.filter((m: any) => m.status === 'unread').length > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                  {contactMessages.filter((m: any) => m.status === 'unread').length}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="requests" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
               <FileCheck className="w-4 h-4 mr-2" />
@@ -2139,22 +2157,35 @@ export default function AdminPage() {
                                 </Badge>
                               </td>
                               <td className="px-6 py-4">
-                                {user.membership?.tier ? (
-                                  <div>
-                                    <Badge className="bg-purple-600">
-                                      {user.membership.tier}
-                                    </Badge>
-                                    <div className="text-xs text-gray-500 mt-1">
-                                      {(() => {
-                                        const expiry = new Date(user.membership.expiryDate);
-                                        const isLifetime = (user as any).membership?.lifetime === true || expiry.getFullYear() >= 9999;
-                                        return `Expires: ${isLifetime ? 'Lifetime' : expiry.toLocaleDateString()}`;
-                                      })()}
+                                {(() => {
+                                  const membership = (user as any).membership;
+                                  if (!membership || !membership.tier) {
+                                    return <span className="text-sm text-gray-400">No membership</span>;
+                                  }
+
+                                  const expiry = membership.expiryDate ? new Date(membership.expiryDate) : null;
+                                  const isLifetime =
+                                    membership.lifetime === true ||
+                                    (expiry && expiry.getFullYear() >= 9999);
+                                  const isActive =
+                                    isLifetime || (expiry !== null && expiry > new Date());
+
+                                  if (!isActive) {
+                                    // Membership expired – treat as no membership in admin list
+                                    return <span className="text-sm text-gray-400">No membership</span>;
+                                  }
+
+                                  return (
+                                    <div>
+                                      <Badge className="bg-purple-600">
+                                        {membership.tier}
+                                      </Badge>
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        {`Expires: ${isLifetime ? 'Lifetime' : expiry!.toLocaleDateString()}`}
+                                      </div>
                                     </div>
-                                  </div>
-                                ) : (
-                                  <span className="text-sm text-gray-400">No membership</span>
-                                )}
+                                  );
+                                })()}
                               </td>
                               <td className="px-6 py-4">
                                 <div className="text-sm text-gray-900 flex items-center gap-1">
@@ -2244,6 +2275,202 @@ export default function AdminPage() {
                     </ul>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Messages Tab */}
+          <TabsContent value="messages" className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Contact Messages</h2>
+                <p className="text-gray-600">View and manage messages from the Contact Us page</p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => refetchMessages()}
+                className="flex items-center gap-2"
+              >
+                <Search className="w-4 h-4" />
+                Refresh
+              </Button>
+            </div>
+
+            {/* Messages Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600">Total Messages</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{contactMessages.length}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600">Unread</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-red-600">
+                    {contactMessages.filter((m: any) => m.status === 'unread').length}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600">Read</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-blue-600">
+                    {contactMessages.filter((m: any) => m.status === 'read').length}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-gray-600">Replied</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">
+                    {contactMessages.filter((m: any) => m.status === 'replied').length}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Messages List */}
+            <Card>
+              <CardContent className="p-0">
+                {isLoadingMessages ? (
+                  <div className="p-8 text-center text-gray-500">Loading messages...</div>
+                ) : contactMessages.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">No messages yet</div>
+                ) : (
+                  <div className="divide-y">
+                    {contactMessages.map((msg: any) => (
+                      <div key={msg._id} className={`p-4 hover:bg-gray-50 ${msg.status === 'unread' ? 'bg-blue-50' : ''}`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-semibold text-gray-900">{msg.name}</span>
+                              <Badge
+                                variant={msg.status === 'unread' ? 'destructive' : msg.status === 'replied' ? 'default' : 'secondary'}
+                                className={msg.status === 'replied' ? 'bg-green-600' : ''}
+                              >
+                                {msg.status}
+                              </Badge>
+                            </div>
+                            {msg.subject && (
+                              <p className="text-sm font-medium text-gray-700 mb-1">Subject: {msg.subject}</p>
+                            )}
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap">{msg.message}</p>
+                            {msg.adminNotes && msg.status === 'replied' && (
+                              <div className="mt-3 p-3 bg-green-50 border-l-4 border-green-500 rounded">
+                                <p className="text-xs font-semibold text-green-800 mb-1">Admin Reply:</p>
+                                <p className="text-sm text-green-900 whitespace-pre-wrap">{msg.adminNotes}</p>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                              {msg.email && (
+                                <span className="flex items-center gap-1">
+                                  <Mail className="w-3 h-3" />
+                                  {msg.email}
+                                </span>
+                              )}
+                              {msg.phone && (
+                                <span className="flex items-center gap-1">
+                                  <Phone className="w-3 h-3" />
+                                  {msg.phone}
+                                </span>
+                              )}
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {new Date(msg.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-blue-600 hover:text-blue-700"
+                              onClick={() => {
+                                setReplyingToMessage(msg);
+                                setReplyText('');
+                              }}
+                              title="回复用户"
+                            >
+                              <Reply className="w-4 h-4 mr-1" />
+                              Reply
+                            </Button>
+                            {msg.status === 'unread' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`/api/admin/contact-messages/${msg._id}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ status: 'read' }),
+                                    });
+                                    refetchMessages();
+                                  } catch (error) {
+                                    toast({ title: 'Error', description: 'Failed to mark as read', variant: 'destructive' });
+                                  }
+                                }}
+                              >
+                                Mark Read
+                              </Button>
+                            )}
+                            {msg.status !== 'replied' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-green-600 hover:text-green-700"
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`/api/admin/contact-messages/${msg._id}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ status: 'replied' }),
+                                    });
+                                    refetchMessages();
+                                    toast({ title: 'Success', description: 'Marked as replied' });
+                                  } catch (error) {
+                                    toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+                                  }
+                                }}
+                              >
+                                Mark Replied
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700"
+                              onClick={async () => {
+                                if (window.confirm('Are you sure you want to delete this message?')) {
+                                  try {
+                                    await fetch(`/api/admin/contact-messages/${msg._id}`, {
+                                      method: 'DELETE',
+                                    });
+                                    refetchMessages();
+                                    toast({ title: 'Success', description: 'Message deleted' });
+                                  } catch (error) {
+                                    toast({ title: 'Error', description: 'Failed to delete', variant: 'destructive' });
+                                  }
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -4480,6 +4707,149 @@ export default function AdminPage() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reply to Contact Message Dialog */}
+      <Dialog open={!!replyingToMessage} onOpenChange={(open) => !open && setReplyingToMessage(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+            <DialogTitle>Reply to Message</DialogTitle>
+            <DialogDescription>
+              Reply to {replyingToMessage?.name}. The reply will be saved and visible in the user's Dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {replyingToMessage && (
+            <div className="space-y-4">
+              {/* Original Message */}
+              <div className="bg-gray-50 p-4 rounded-lg border">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-900">{replyingToMessage.name}</span>
+                    {replyingToMessage.email && (
+                      <span className="text-sm text-gray-600">({replyingToMessage.email})</span>
+                    )}
+                  </div>
+                  {replyingToMessage.subject && (
+                    <p className="text-sm font-medium text-gray-700">
+                      <strong>Subject:</strong> {replyingToMessage.subject}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                    {replyingToMessage.message}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(replyingToMessage.createdAt).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Reply Form */}
+              <div className="space-y-2">
+                <Label htmlFor="reply-message" className="text-gray-900 font-semibold">
+                  Your Reply
+                </Label>
+                <Textarea
+                  id="reply-message"
+                  placeholder="Type your reply here..."
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  className="min-h-[200px] text-gray-900 bg-white border-gray-300"
+                  disabled={isSendingReply}
+                />
+                <p className="text-xs text-gray-500">
+                  This reply will be saved and the user can view it in their Dashboard → My Messages section.
+                  {replyingToMessage.email && (
+                    <span className="block mt-1 text-blue-600">
+                      An email notification will also be sent to {replyingToMessage.email} (optional).
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+              onClick={() => {
+                setReplyingToMessage(null);
+                setReplyText('');
+              }}
+              disabled={isSendingReply}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={async () => {
+                if (!replyText.trim()) {
+                  toast({
+                    title: 'Error',
+                    description: 'Please enter a reply message',
+                    variant: 'destructive',
+                  });
+                  return;
+                }
+
+                setIsSendingReply(true);
+                try {
+                  console.log('Sending reply to message:', replyingToMessage._id);
+                  const response = await fetch(`/api/admin/contact-messages/${replyingToMessage._id}/reply`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ replyMessage: replyText }),
+                  });
+
+                  if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: 'Failed to send reply' }));
+                    console.error('Reply API error:', {
+                      status: response.status,
+                      statusText: response.statusText,
+                      errorData
+                    });
+                    throw new Error(errorData.message || errorData.error || `Failed to send reply (${response.status})`);
+                  }
+
+                  const result = await response.json();
+                  console.log('Reply saved successfully:', result);
+                  toast({
+                    title: 'Success',
+                    description: result.message || 'Reply saved successfully',
+                  });
+
+                  setReplyingToMessage(null);
+                  setReplyText('');
+                  refetchMessages();
+                } catch (error: any) {
+                  console.error('Error sending reply:', error);
+                  toast({
+                    title: 'Error',
+                    description: error.message || 'Failed to send reply. Please check the console for details.',
+                    variant: 'destructive',
+                  });
+                } finally {
+                  setIsSendingReply(false);
+                }
+              }}
+              disabled={isSendingReply || !replyText.trim()}
+            >
+              {isSendingReply ? (
+                <>
+                  <span className="mr-2">Sending...</span>
+                </>
+              ) : (
+                <>
+                  <Reply className="w-4 h-4 mr-2" />
+                  Send Reply
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -165,7 +165,7 @@ export default function NavigationSidebar() {
                   <a href="#" className="flex-1 p-2.5 bg-white hover:bg-gradient-to-r hover:from-pink-500 hover:to-pink-600 rounded-lg transition-all duration-200 flex items-center justify-center shadow-sm hover:shadow-md border border-gray-200 hover:border-pink-500 group">
                     <Instagram size={16} className="text-gray-600 group-hover:text-white transition-colors" />
                   </a>
-                  <a href="#" className="flex-1 p-2.5 bg-white hover:bg-gradient-to-r hover:from-red-500 hover:to-red-600 rounded-lg transition-all duration-200 flex items-center justify-center shadow-sm hover:shadow-md border border-gray-200 hover:border-red-500 group">
+                  <a href="https://www.youtube.com/@PawCart" target="_blank" rel="noopener noreferrer" className="flex-1 p-2.5 bg-white hover:bg-gradient-to-r hover:from-red-500 hover:to-red-600 rounded-lg transition-all duration-200 flex items-center justify-center shadow-sm hover:shadow-md border border-gray-200 hover:border-red-500 group">
                     <Youtube size={16} className="text-gray-600 group-hover:text-white transition-colors" />
                   </a>
                   <a href="#" className="flex-1 p-2.5 bg-white hover:bg-gradient-to-r hover:from-blue-600 hover:to-blue-700 rounded-lg transition-all duration-200 flex items-center justify-center shadow-sm hover:shadow-md border border-gray-200 hover:border-blue-600 group">

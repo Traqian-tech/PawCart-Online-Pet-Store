@@ -529,6 +529,31 @@ const addressSchema = new Schema<IAddress>({
   label: { type: String, enum: ['Home', 'Work', 'Other'], default: 'Home' },
 }, { timestamps: true });
 
+// Contact Message Schema
+export interface IContactMessage extends Document {
+  name: string;
+  email?: string;
+  phone?: string;
+  subject?: string;
+  message: string;
+  status: 'unread' | 'read' | 'replied';
+  adminNotes?: string;
+  userId?: string; // Store user ID if message is from logged-in user
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const contactMessageSchema = new Schema<IContactMessage>({
+  name: { type: String, required: true },
+  email: { type: String },
+  phone: { type: String },
+  subject: { type: String },
+  message: { type: String, required: true },
+  status: { type: String, enum: ['unread', 'read', 'replied'], default: 'unread' },
+  adminNotes: { type: String },
+  userId: { type: String }, // Optional: user ID if message is from logged-in user
+}, { timestamps: true });
+
 // Export Models
 export const User = mongoose.model<IUser>('User', userSchema);
 export const Category = mongoose.model<ICategory>('Category', categorySchema);
@@ -546,6 +571,7 @@ export const PaymentWebhook = mongoose.model<IPaymentWebhook>('PaymentWebhook', 
 export const Banner = mongoose.model<IBanner>('Banner', bannerSchema);
 export const PopupPoster = mongoose.model<IPopupPoster>('PopupPoster', popupPosterSchema);
 export const Address = mongoose.model<IAddress>('Address', addressSchema);
+export const ContactMessage = mongoose.model<IContactMessage>('ContactMessage', contactMessageSchema);
 
 // Wallet Schema
 export interface IWallet extends Document {
@@ -942,3 +968,4 @@ export type ProductRecommendationType = IProductRecommendation;
 export type PetType = IPet;
 export type PetHealthRecordType = IPetHealthRecord;
 export type PetCarePlanType = IPetCarePlan;
+export type ContactMessageType = IContactMessage;

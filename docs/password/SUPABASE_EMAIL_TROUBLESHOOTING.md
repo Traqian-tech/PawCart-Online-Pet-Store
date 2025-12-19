@@ -343,3 +343,12 @@ console.log('Supabase connection:', error ? 'Failed' : 'OK');
 
 
 
+
+
+
+
+
+
+
+
+

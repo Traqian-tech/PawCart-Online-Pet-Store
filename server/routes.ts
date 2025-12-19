@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { User, Product, Category, Brand, Announcement, Cart, Order, Invoice, BlogPost, Coupon, PaymentTransaction, PaymentWebhook, Request, Address, ChatMessage, ChatConversation, UserBehavior, Pet, PetHealthRecord, PetCarePlan } from "@shared/models";
+import { User, Product, Category, Brand, Announcement, Cart, Order, Invoice, BlogPost, Coupon, PaymentTransaction, PaymentWebhook, Request, Address, ChatMessage, ChatConversation, UserBehavior, Pet, PetHealthRecord, PetCarePlan, ContactMessage } from "@shared/models";
 import { recommendationService } from "./recommendation-service";
 import { generateUniqueProductSlug, findProductBySlug, migrateProductSlugs } from "./slug-utils";
 import type { IUser, ICart, ICartItem, IOrder, IInvoice, IBlogPost, ICoupon, IRequest, IAddress } from "@shared/models";
@@ -12,6 +12,7 @@ import path from "path";
 import { promises as fs } from "fs";
 import sharp from "sharp";
 import { sendMembershipRenewedEmail } from "./email-service";
+import { sendEmail } from "./resend-email-service";
 import { registerWalletRoutes, getOrCreateWallet, addWalletTransaction } from "./wallet-routes";
 import { getSupabaseClient } from "./supabase-client";
 // EmailJS handles email sending on the client side
@@ -2682,6 +2683,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('SUCCESS: User found -', user.email || user.username);
 
+      // Check if user already has an active membership
+      if (user.membership && user.membership.tier) {
+        const expiryDate = new Date(user.membership.expiryDate);
+        const isLifetimeMembership = (user.membership as any).lifetime === true || expiryDate.getFullYear() >= 9999;
+        const isActive = isLifetimeMembership || expiryDate > new Date();
+        
+        if (isActive) {
+          console.log('ERROR: User already has an active membership:', user.membership.tier);
+          return res.status(400).json({ 
+            message: `You already have an active ${user.membership.tier} membership${isLifetimeMembership ? ' (Lifetime)' : ` that expires on ${expiryDate.toLocaleDateString()}`}. Please cancel your current membership first or wait for it to expire.`,
+            currentMembership: {
+              tier: user.membership.tier,
+              expiryDate: user.membership.expiryDate,
+              isLifetime: isLifetimeMembership
+            }
+          });
+        }
+      }
+
       // Decide if this is a lifetime purchase BEFORE any payment handling
       const isLifetime = (typeof duration === 'number' && duration <= 0) || (tier === 'Diamond Paw' && typeof amount === 'number' && amount >= 500);
       // Determine charge amount (server-authoritative)
@@ -3069,23 +3089,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "User ID is required" });
       }
 
-      const user = await User.findById(userId);
+      // Try to find user by various methods
+      let user = await User.findById(userId);
+      if (!user) {
+        user = await User.findOne({ email: userId });
+      }
+      if (!user) {
+        user = await User.findOne({ username: userId });
+      }
+      
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
 
-      user.membership = undefined;
-      await user.save();
+      // Check if user has an active membership
+      if (!user.membership || !user.membership.tier) {
+        return res.status(400).json({ message: "User does not have an active membership" });
+      }
 
-      const { password, ...userResponse } = user.toObject();
+      const cancelledTier = user.membership.tier;
+      const wasLifetime = (user.membership as any).lifetime === true;
+
+      // Remove membership completely - set to null/undefined
+      user.membership = undefined;
+      // Also use $unset to ensure it's completely removed from MongoDB
+      await User.findByIdAndUpdate(
+        user._id,
+        { $unset: { membership: "" } },
+        { new: true }
+      );
+      
+      // Reload user to ensure membership is removed
+      const updatedUser = await User.findById(user._id);
+
+      console.log(`[Membership] User ${user.email || user.username} cancelled ${cancelledTier} membership${wasLifetime ? ' (Lifetime)' : ''}`);
+
+      if (!updatedUser) {
+        return res.status(500).json({ message: "Failed to update user after cancellation" });
+      }
+
+      const { password, ...userResponse } = updatedUser.toObject();
       
       res.json({
         message: "Membership cancelled successfully",
-        user: userResponse
+        user: userResponse,
+        cancelledTier: cancelledTier,
+        wasLifetime: wasLifetime
       });
     } catch (error) {
       console.error("Membership cancel error:", error);
-      res.status(500).json({ message: "Failed to cancel membership" });
+      res.status(500).json({ 
+        message: "Failed to cancel membership",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
@@ -3528,6 +3584,326 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { width, height } = req.params;
     const imageUrl = `https://via.placeholder.com/${width}x${height}/26732d/ffffff?text=Pet+Shop`;
     res.redirect(imageUrl);
+  });
+
+  // Contact Messages API
+  // Create a new contact message (public)
+  app.post("/api/contact-messages", async (req, res) => {
+    try {
+      const { name, email, phone, subject, message, userId } = req.body;
+      // Also try to get userId from header if not in body
+      const headerUserId = req.headers['x-user-id'] as string || (req.session as any)?.userId;
+      const finalUserId = userId || headerUserId;
+
+      if (!name || !message) {
+        return res.status(400).json({ message: "Name and message are required" });
+      }
+
+      // If userId is provided, verify the user exists and get their email
+      let verifiedEmail = email;
+      if (finalUserId) {
+        try {
+          const user = await User.findById(finalUserId);
+          if (user) {
+            // Use user's account email if available, otherwise use provided email
+            verifiedEmail = user.email || email;
+            console.log(`[Contact] Message from logged-in user: ${user.email || user.username}`);
+          }
+        } catch (e) {
+          console.log('[Contact] Could not verify user ID:', finalUserId);
+        }
+      }
+
+      const contactMessage = new ContactMessage({
+        name,
+        email: verifiedEmail,
+        phone,
+        subject,
+        message,
+        userId: finalUserId, // Store userId if available
+        status: 'unread'
+      });
+
+      await contactMessage.save();
+      console.log(`[Contact] New message received from: ${name}${finalUserId ? ` (userId: ${finalUserId})` : ''}`);
+
+      res.status(201).json({
+        message: "Message sent successfully",
+        id: contactMessage._id
+      });
+    } catch (error) {
+      console.error('[Contact] Error saving message:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ 
+        message: "Failed to send message",
+        error: errorMessage
+      });
+    }
+  });
+
+  // Get all contact messages (admin only)
+  app.get("/api/admin/contact-messages", async (req, res) => {
+    try {
+      const messages = await ContactMessage.find({})
+        .sort({ createdAt: -1 });
+      res.json(messages);
+    } catch (error) {
+      console.error('[Contact] Error fetching messages:', error);
+      res.status(500).json({ message: "Failed to fetch contact messages" });
+    }
+  });
+
+  // Reply to contact message (admin only) - MUST be before /:id routes
+  app.post("/api/admin/contact-messages/:id/reply", async (req, res) => {
+    console.log(`[Contact] POST /api/admin/contact-messages/:id/reply route handler called`);
+    console.log(`[Contact] Request URL: ${req.originalUrl}, Path: ${req.path}, Params:`, req.params);
+    try {
+      const { id } = req.params;
+      const { replyMessage } = req.body;
+
+      console.log(`[Contact] Reply request received for message ID: ${id}`);
+      console.log(`[Contact] Reply message length: ${replyMessage?.length || 0}`);
+
+      if (!replyMessage || replyMessage.trim() === '') {
+        return res.status(400).json({ message: "Reply message is required" });
+      }
+
+      if (!id) {
+        return res.status(400).json({ message: "Message ID is required" });
+      }
+
+      const message = await ContactMessage.findById(id);
+
+      if (!message) {
+        console.error(`[Contact] Message not found with ID: ${id}`);
+        return res.status(404).json({ message: "Message not found" });
+      }
+
+      console.log(`[Contact] Found message: ${message.name}, email: ${message.email || 'none'}`);
+
+      let emailSent = false;
+
+      // Only send email if email address is available
+      if (message.email) {
+        // Create email HTML template
+        const emailHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f5f5f5; margin: 0; padding: 0; }
+              .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+              .header { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: white; padding: 40px; text-align: center; }
+              .header h1 { margin: 0; font-size: 28px; }
+              .content { padding: 40px; }
+              .original-message { background: #f9fafb; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px; }
+              .reply-message { background: #fef3c7; border-left: 4px solid #fbbf24; padding: 15px; margin: 20px 0; border-radius: 4px; }
+              .footer { background: #f9fafb; padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>📧 Reply from MeowMeow PetShop</h1>
+              </div>
+              <div class="content">
+                <p>Hello ${message.name},</p>
+                <p>Thank you for contacting us. We have received your message and here is our reply:</p>
+                
+                ${message.subject ? `<p><strong>Your Subject:</strong> ${message.subject}</p>` : ''}
+                
+                <div class="original-message">
+                  <strong>Your Message:</strong>
+                  <p style="margin-top: 10px; white-space: pre-wrap;">${message.message}</p>
+                </div>
+                
+                <div class="reply-message">
+                  <strong>Our Reply:</strong>
+                  <p style="margin-top: 10px; white-space: pre-wrap;">${replyMessage}</p>
+                </div>
+                
+                <p>If you have any further questions, please don't hesitate to contact us again.</p>
+                
+                <p>Best regards,<br><strong>MeowMeow PetShop Team</strong></p>
+              </div>
+              <div class="footer">
+                <p>This is an automated email. Please do not reply to this message.</p>
+                <p>&copy; ${new Date().getFullYear()} MeowMeow PetShop. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `;
+
+        // Send email
+        const emailSubject = message.subject 
+          ? `Re: ${message.subject} - MeowMeow PetShop`
+          : 'Reply from MeowMeow PetShop';
+
+        try {
+          emailSent = await sendEmail({
+            to: message.email,
+            subject: emailSubject,
+            html: emailHtml,
+          });
+
+          if (emailSent) {
+            console.log(`[Contact] Reply email sent to ${message.email} for message ${id}`);
+          } else {
+            console.log(`[Contact] Failed to send email to ${message.email} for message ${id}, but reply will be saved`);
+          }
+        } catch (emailError) {
+          console.error(`[Contact] Email sending error (non-fatal):`, emailError);
+          emailSent = false;
+          // Continue to save reply even if email fails
+        }
+      } else {
+        console.log(`[Contact] No email address for message ${id}, reply saved only`);
+      }
+
+      // Update message status and store reply (always save reply, even if email not sent)
+      try {
+        message.status = 'replied';
+        message.adminNotes = replyMessage;
+        await message.save();
+        console.log(`[Contact] Reply saved successfully for message ${id}`);
+      } catch (saveError) {
+        console.error(`[Contact] Error saving reply to database:`, saveError);
+        throw saveError; // Re-throw to be caught by outer catch
+      }
+
+      console.log(`[Contact] Reply saved for message ${id}. User can view it in their Dashboard.`);
+
+      res.json({ 
+        message: "Reply saved successfully. User can view it in their Dashboard → My Messages section.",
+        emailSent: emailSent,
+        saved: true
+      });
+    } catch (error) {
+      console.error('[Contact] Error sending reply:', error);
+      console.error('[Contact] Error details:', {
+        messageId: req.params.id,
+        error: error instanceof Error ? error.stack : String(error),
+        replyMessage: req.body.replyMessage?.substring(0, 100)
+      });
+      res.status(500).json({ 
+        message: "Failed to save reply",
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : String(error)) : undefined
+      });
+    }
+  });
+
+  // Update contact message status (admin only)
+  app.patch("/api/admin/contact-messages/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, adminNotes } = req.body;
+
+      const updateData: any = {};
+      if (status) updateData.status = status;
+      if (adminNotes !== undefined) updateData.adminNotes = adminNotes;
+
+      const message = await ContactMessage.findByIdAndUpdate(
+        id,
+        updateData,
+        { new: true }
+      );
+
+      if (!message) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+
+      res.json(message);
+    } catch (error) {
+      console.error('[Contact] Error updating message:', error);
+      res.status(500).json({ message: "Failed to update message" });
+    }
+  });
+
+  // Delete contact message (admin only)
+  app.delete("/api/admin/contact-messages/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const message = await ContactMessage.findByIdAndDelete(id);
+
+      if (!message) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+
+      res.json({ message: "Message deleted successfully" });
+    } catch (error) {
+      console.error('[Contact] Error deleting message:', error);
+      res.status(500).json({ message: "Failed to delete message" });
+    }
+  });
+
+  // Get user's contact messages with replies (user only)
+  app.get("/api/contact-messages/my-messages", async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string || (req.session as any)?.userId;
+      
+      // Try to get user email from session or user lookup
+      let userEmail: string | undefined;
+      let userName: string | undefined;
+      
+      if (userId) {
+        try {
+          const user = await User.findById(userId);
+          if (user) {
+            userEmail = user.email;
+            userName = user.name || user.firstName || user.username;
+          }
+        } catch (e) {
+          console.log('[Contact] Could not find user by ID:', userId);
+        }
+      }
+
+      // Also check if email is in request (for non-logged-in users who provided email)
+      const requestEmail = (req.query.email as string) || (req as any).user?.email;
+      if (requestEmail) {
+        userEmail = requestEmail;
+      }
+
+      // Build query: match messages by userId OR email (case-insensitive)
+      let query: any = {};
+      
+      if (userId) {
+        // If user is logged in, match by userId first (most reliable)
+        // Also match by email (case-insensitive) as fallback
+        const emailConditions: any[] = [];
+        if (userEmail) {
+          // Case-insensitive email matching using regex
+          emailConditions.push({ email: { $regex: new RegExp(`^${userEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+        }
+        
+        // Match by userId OR email
+        query = {
+          $or: [
+            { userId: userId },
+            ...emailConditions
+          ]
+        };
+      } else if (userEmail) {
+        // Not logged in but email provided - match by email only (case-insensitive)
+        query = { email: { $regex: new RegExp(`^${userEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } };
+      } else {
+        return res.status(401).json({ message: "Please log in to view your messages. Messages are matched by your account email address." });
+      }
+
+      // Find messages
+      const messages = await ContactMessage.find(query)
+        .sort({ createdAt: -1 })
+        .select('name email subject message status adminNotes createdAt updatedAt userId');
+
+      console.log(`[Contact] Found ${messages.length} messages for user ${userId || 'anonymous'}${userEmail ? ` (email: ${userEmail})` : ''}`);
+
+      res.json(messages);
+    } catch (error) {
+      console.error('[Contact] Error fetching user messages:', error);
+      res.status(500).json({ message: "Failed to fetch messages" });
+    }
   });
 
   // Announcements API

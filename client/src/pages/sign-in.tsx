@@ -815,7 +815,7 @@ export default function SignInPage() {
         <div className="text-center mt-8 text-slate-500 text-sm">
           <p className="font-medium">© 2025 PawCart Online Pet Store. All rights reserved.</p>
           <div className="flex justify-center items-center space-x-3 mt-3">
-            <Link href="/privacy">
+            <Link href="/privacy-policy">
               <Button 
                 variant="link" 
                 className="text-slate-500 hover:text-emerald-600 p-0 h-auto text-sm font-medium transition-colors duration-200"
@@ -824,7 +824,7 @@ export default function SignInPage() {
               </Button>
             </Link>
             <span className="text-slate-300">•</span>
-            <Link href="/terms">
+            <Link href="/terms-of-service">
               <Button 
                 variant="link" 
                 className="text-slate-500 hover:text-emerald-600 p-0 h-auto text-sm font-medium transition-colors duration-200"

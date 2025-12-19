@@ -399,13 +399,13 @@ export default function SignUpPage() {
                 <div className="text-sm text-gray-600 leading-relaxed">
                   <Label htmlFor="terms" className="cursor-pointer">
                     I agree to the{' '}
-                    <Link href="/terms">
+                    <Link href="/terms-of-service">
                       <Button variant="link" className="text-meow-green hover:text-meow-green-dark p-0 h-auto text-sm underline">
                         Terms of Service
                       </Button>
                     </Link>{' '}
                     and{' '}
-                    <Link href="/privacy">
+                    <Link href="/privacy-policy">
                       <Button variant="link" className="text-meow-green hover:text-meow-green-dark p-0 h-auto text-sm underline">
                         Privacy Policy
                       </Button>

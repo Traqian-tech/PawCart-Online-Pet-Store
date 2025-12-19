@@ -61,6 +61,7 @@ import {
   Calendar,
   Mail,
   MailOpen,
+  Inbox,
   Zap,
   ArrowRight,
   Users,
@@ -326,6 +327,8 @@ export default function DashboardPage() {
   const [isHealthRecordDialogOpen, setIsHealthRecordDialogOpen] = useState(false)
   const [isHealthOverviewOpen, setIsHealthOverviewOpen] = useState(false)
   const [isCarePlanDialogOpen, setIsCarePlanDialogOpen] = useState(false)
+  const [isCancelMembershipDialogOpen, setIsCancelMembershipDialogOpen] = useState(false)
+  const [isCancellingMembership, setIsCancellingMembership] = useState(false)
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null)
   const [activeTab, setActiveTab] = useState('pets')
   
@@ -347,6 +350,28 @@ export default function DashboardPage() {
   })
   
   const healthReminders: HealthReminder[] = remindersData?.reminders || []
+  
+  // User's contact messages query (for My Messages section)
+  const { data: userMessages = [], isLoading: isLoadingUserMessages, refetch: refetchUserMessages } = useQuery<any[]>({
+    queryKey: ['/api/contact-messages/my-messages', user?.email],
+    enabled: !!user && !!user.email && activeSection === 'messages',
+    queryFn: async () => {
+      const userId = String(user?._id || user?.id || '');
+      const userEmail = user?.email || '';
+      
+      const response = await fetch(`/api/contact-messages/my-messages?email=${encodeURIComponent(userEmail)}`, {
+        credentials: 'include',
+        headers: {
+          'x-user-id': userId,
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch messages');
+      }
+      return response.json();
+    },
+  });
   
   // Pet form
   const petForm = useForm<PetFormData>({
@@ -1048,7 +1073,7 @@ export default function DashboardPage() {
   })
 
   // Savings Plan state
-  const [activePlans] = useState([
+  const [activePlans, setActivePlans] = useState([
     { 
       id: 1, 
       name: 'Premium Cat Food Monthly', 
@@ -1060,6 +1085,9 @@ export default function DashboardPage() {
       status: 'active'
     },
   ])
+  const [modifyPlanDialogOpen, setModifyPlanDialogOpen] = useState(false)
+  const [cancelPlanDialogOpen, setCancelPlanDialogOpen] = useState(false)
+  const [selectedPlan, setSelectedPlan] = useState<any>(null)
   const [availablePlans] = useState([
     {
       id: 1,
@@ -1281,6 +1309,7 @@ export default function DashboardPage() {
     { key: 'refer', icon: <Users className="h-5 w-5" />, label: 'Refer a Friend', color: 'cyan' },
     { key: 'newsletter', icon: <Mail className="h-5 w-5" />, label: 'Newsletters', color: 'violet' },
     { key: 'savings', icon: <Sparkles className="h-5 w-5" />, label: 'Savings Plan', color: 'emerald' },
+    { key: 'messages', icon: <Inbox className="h-5 w-5" />, label: 'My Messages', color: 'blue' },
   ]
 
   const helpItems = [
@@ -1442,6 +1471,18 @@ export default function DashboardPage() {
               </div>
               )}
 
+              {/* Cancel Membership Button */}
+              <div className="border-t border-white/20 pt-4">
+                <Button
+                  variant="outline"
+                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/30"
+                  onClick={() => setIsCancelMembershipDialogOpen(true)}
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  Cancel Membership
+                </Button>
+              </div>
+
               {/* Membership Statistics */}
               {membershipStats?.hasActiveMembership && membershipStats.statistics && (
                 <div className="border-t border-white/20 pt-4">
@@ -1508,6 +1549,111 @@ export default function DashboardPage() {
           </Card>
         )}
 
+        {/* Cancel Membership Dialog */}
+        {isActiveMembership && membership && (
+          <Dialog open={isCancelMembershipDialogOpen} onOpenChange={setIsCancelMembershipDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Cancel Membership</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to cancel your membership? This action cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-red-900 mb-1">Membership: {membership.tier}</p>
+                      <p className="text-sm text-red-700">
+                        You will lose all membership benefits including:
+                      </p>
+                      <ul className="text-sm text-red-700 mt-2 list-disc list-inside space-y-1">
+                        <li>{getMembershipDiscount(membership.tier)}% discount on all products</li>
+                        <li>Free delivery on orders</li>
+                        <li>Exclusive member-only products</li>
+                        <li>Priority customer support</li>
+                        {(membership as any).lifetime && (
+                          <li className="font-semibold">⚠️ This is a lifetime membership - cancellation is permanent!</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                {!(membership as any).lifetime && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-2">
+                      <Info className="h-5 w-5 text-blue-600 mt-0.5" />
+                      <p className="text-sm text-blue-800">
+                        Your membership will remain active until {new Date(membership.expiryDate).toLocaleDateString()}. 
+                        After cancellation, you will not be charged for renewal.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsCancelMembershipDialogOpen(false)}
+                  disabled={isCancellingMembership}
+                >
+                  Keep Membership
+                </Button>
+                <Button 
+                  variant="destructive"
+                  onClick={async () => {
+                    setIsCancellingMembership(true)
+                    try {
+                      const userId = String((user as any)?._id || (user as any)?.id || '')
+                      
+                      const response = await fetch('/api/membership/cancel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId }),
+                      })
+
+                      if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}))
+                        throw new Error(errorData.message || 'Failed to cancel membership')
+                      }
+
+                      await refreshUser()
+                      
+                      toast({
+                        title: "Membership Cancelled",
+                        description: "Your membership has been cancelled successfully. You can rejoin anytime.",
+                        variant: "default",
+                      })
+                      
+                      setIsCancelMembershipDialogOpen(false)
+                    } catch (error: any) {
+                      console.error('Cancel membership error:', error)
+                      toast({
+                        title: "Error",
+                        description: error.message || "Failed to cancel membership. Please try again.",
+                        variant: "destructive",
+                      })
+                    } finally {
+                      setIsCancellingMembership(false)
+                    }
+                  }}
+                  disabled={isCancellingMembership}
+                >
+                  {isCancellingMembership ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Cancelling...
+                    </>
+                  ) : (
+                    'Cancel Membership'
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
         {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-1">
         <Card className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white">
@@ -1515,7 +1661,7 @@ export default function DashboardPage() {
             <CardTitle className="text-xs sm:text-sm font-medium">TOTAL SPENT</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl sm:text-3xl font-bold">${userStats.totalSpent.toFixed(2)}</div>
+            <div className="text-2xl sm:text-3xl font-bold">{format(userStats.totalSpent)}</div>
           </CardContent>
         </Card>
 
@@ -6169,11 +6315,27 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="mt-4 flex gap-2">
-                      <Button size="sm" variant="outline" className="flex-1">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="flex-1"
+                        onClick={() => {
+                          setSelectedPlan(plan)
+                          setModifyPlanDialogOpen(true)
+                        }}
+                      >
                         <Edit className="h-4 w-4 mr-2" />
                         Modify Plan
                       </Button>
-                      <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="text-red-600 hover:text-red-700"
+                        onClick={() => {
+                          setSelectedPlan(plan)
+                          setCancelPlanDialogOpen(true)
+                        }}
+                      >
                         Cancel Plan
                       </Button>
                     </div>
@@ -6342,6 +6504,258 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Modify Plan Dialog */}
+        <Dialog open={modifyPlanDialogOpen} onOpenChange={setModifyPlanDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Modify Savings Plan</DialogTitle>
+              <DialogDescription>
+                Update your savings plan settings
+              </DialogDescription>
+            </DialogHeader>
+            {selectedPlan && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Plan Name</Label>
+                  <Input 
+                    defaultValue={selectedPlan.name}
+                    onChange={(e) => setSelectedPlan({...selectedPlan, name: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <Label>Delivery Frequency</Label>
+                  <Select 
+                    defaultValue={selectedPlan.frequency.toLowerCase()}
+                    onValueChange={(value) => setSelectedPlan({...selectedPlan, frequency: value.charAt(0).toUpperCase() + value.slice(1)})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="bi-monthly">Bi-Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Next Delivery Date</Label>
+                  <Input 
+                    type="date"
+                    defaultValue={selectedPlan.nextDelivery}
+                    onChange={(e) => setSelectedPlan({...selectedPlan, nextDelivery: e.target.value})}
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setModifyPlanDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => {
+                  if (selectedPlan) {
+                    setActivePlans(activePlans.map(plan => 
+                      plan.id === selectedPlan.id ? selectedPlan : plan
+                    ))
+                    toast({
+                      title: "Plan Updated",
+                      description: "Your savings plan has been modified successfully.",
+                    })
+                    setModifyPlanDialogOpen(false)
+                    setSelectedPlan(null)
+                  }
+                }}
+                className="bg-[#26732d] hover:bg-[#1e5d26]"
+              >
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cancel Plan Dialog */}
+        <Dialog open={cancelPlanDialogOpen} onOpenChange={setCancelPlanDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Cancel Savings Plan</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to cancel this savings plan? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            {selectedPlan && (
+              <div className="space-y-4">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-red-900 mb-1">Plan: {selectedPlan.name}</p>
+                      <p className="text-sm text-red-700">
+                        You will lose your {selectedPlan.discount}% discount and automatic delivery will stop.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setCancelPlanDialogOpen(false)
+                setSelectedPlan(null)
+              }}>
+                Keep Plan
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={() => {
+                  if (selectedPlan) {
+                    setActivePlans(activePlans.filter(plan => plan.id !== selectedPlan.id))
+                    toast({
+                      title: "Plan Cancelled",
+                      description: "Your savings plan has been cancelled successfully.",
+                      variant: "default",
+                    })
+                    setCancelPlanDialogOpen(false)
+                    setSelectedPlan(null)
+                  }
+                }}
+              >
+                Cancel Plan
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
+
+  const renderMyMessages = () => {
+    const messages = userMessages || [];
+    const messagesWithReplies = messages.filter((msg: any) => msg.status === 'replied' && msg.adminNotes);
+    const unreadReplies = messagesWithReplies.filter((msg: any) => !(msg as any).replyRead);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+              My Messages
+            </h2>
+            <p className="text-gray-600 mt-1">View replies from our customer support team</p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => refetchUserMessages()}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </Button>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-600">Total Messages</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{messages.length}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-600">Replies Received</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{messagesWithReplies.length}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-600">Unread Replies</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{unreadReplies.length}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Messages List */}
+        {isLoadingUserMessages ? (
+          <Card>
+            <CardContent className="p-8 text-center text-gray-500">
+              <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin" />
+              Loading messages...
+            </CardContent>
+          </Card>
+        ) : messages.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <Inbox className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-600 mb-4">No messages yet</p>
+              <Button onClick={() => setLocation('/contact')} variant="outline">
+                Contact Us
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {messages.map((msg: any) => (
+              <Card key={msg._id} className={`${msg.status === 'replied' && msg.adminNotes ? 'border-green-200 bg-green-50/30' : ''}`}>
+                <CardContent className="p-6">
+                  <div className="space-y-4">
+                    {/* Original Message */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={msg.status === 'replied' ? 'default' : 'secondary'}>
+                            {msg.status === 'replied' ? 'Replied' : msg.status}
+                          </Badge>
+                          {msg.subject && (
+                            <span className="font-semibold text-gray-900">{msg.subject}</span>
+                          )}
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {new Date(msg.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap mt-2">{msg.message}</p>
+                    </div>
+
+                    {/* Admin Reply */}
+                    {msg.status === 'replied' && msg.adminNotes && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-lg border-l-4 border-blue-500">
+                          <div className="flex items-center gap-2 mb-2">
+                            <MailOpen className="w-4 h-4 text-blue-600" />
+                            <span className="text-sm font-semibold text-blue-900">Admin Reply</span>
+                            <Badge className="bg-green-600 text-white ml-auto">
+                              {new Date(msg.updatedAt).toLocaleString()}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap mt-2">{msg.adminNotes}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No Reply Yet */}
+                    {msg.status !== 'replied' && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Clock className="w-4 h-4" />
+                          <span>Waiting for admin response...</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -6374,6 +6788,8 @@ export default function DashboardPage() {
         return renderNewsletters()
       case 'savings':
         return renderSavings()
+      case 'messages':
+        return renderMyMessages()
       default:
         return <div><h2 className="text-2xl font-bold">Coming Soon</h2><p>This feature is under development.</p></div>
     }

@@ -21,7 +21,7 @@ export default function Footer() {
     { icon: "fab fa-facebook", href: "#" },
     { icon: "fab fa-instagram", href: "#" },
     { icon: "fab fa-twitter", href: "#" },
-    { icon: "fab fa-youtube", href: "#" },
+    { icon: "fab fa-youtube", href: "https://www.youtube.com/@PawCart" },
   ];
 
   return (

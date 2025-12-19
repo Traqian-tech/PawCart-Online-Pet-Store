@@ -660,10 +660,10 @@ export default function PaymentMethodSelector({
           <div className="text-center space-y-2">
             <Badge variant="secondary" className="text-xs">
               <Lock className="w-3 h-3 mr-1" />
-              Secure payment powered by RupantorPay
+              Secure payment processed in Hong Kong
             </Badge>
             <p className="text-xs text-gray-500">
-              Your payment will be verified within 5-10 minutes after submission.
+              Your payment details are encrypted and handled securely.
             </p>
           </div>
         </CardContent>
@@ -804,7 +804,7 @@ export default function PaymentMethodSelector({
           <div className="text-center space-y-2">
             <Badge variant="secondary" className="text-xs">
               <Lock className="w-3 h-3 mr-1" />
-              Secure payment powered by RupantorPay
+              Secure payment powered by PayMe
             </Badge>
             <p className="text-xs text-gray-500">
               Your card information is encrypted and secure. We never store your card details.
@@ -969,7 +969,7 @@ export default function PaymentMethodSelector({
         <div className="text-center">
           <Badge variant="secondary" className="text-xs">
             <Lock className="w-3 h-3 mr-1" />
-            Secure payment powered by RupantorPay
+            Secure payment powered by PayMe
           </Badge>
         </div>
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, User, ShoppingCart, Phone, Truck, Shield, Facebook, Instagram, LogOut, Menu, ChevronDown, LogIn, Speaker, Twitter, Wallet, Cat, Dog, Gamepad2, Package, Bird, Rabbit, BookOpen, Sparkles, Home as HomeIcon } from 'lucide-react';
+import { Search, User, ShoppingCart, Phone, Truck, Facebook, Instagram, LogOut, Menu, ChevronDown, LogIn, Speaker, Twitter, Wallet, Cat, Dog, Gamepad2, Package, Bird, Rabbit, BookOpen, Sparkles, Home as HomeIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -234,7 +234,7 @@ export default function Header() {
                 <a href="https://x.com/PawCartShop?t=u9x_Kolz8awQv5adUIvBlw&s=05" target="_blank" rel="noopener noreferrer" className="text-white hover:text-yellow-300 transition-all duration-200 hover:scale-110">
                   <Twitter size={14} />
                 </a>
-                <a href="#" className="text-white hover:text-yellow-300 transition-all duration-200 hover:scale-110">
+                <a href="https://www.instagram.com/traqian58" target="_blank" rel="noopener noreferrer" className="text-white hover:text-yellow-300 transition-all duration-200 hover:scale-110">
                   <Instagram size={14} />
                 </a>
               </div>
@@ -254,10 +254,6 @@ export default function Header() {
                     <span>Our location</span>
                   </div>
                 </Link>
-                <div className="flex items-center bg-white/15 backdrop-blur-sm px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer hover:bg-white/25 transition-all duration-200 shadow-sm">
-                  <Shield size={14} className="mr-2" />
-                  <span>Track Your Order</span>
-                </div>
               </div>
 
               {/* Center: Announcement */}
@@ -282,7 +278,7 @@ export default function Header() {
                     <a href="https://x.com/PawCartShop?t=u9x_Kolz8awQv5adUIvBlw&s=05" target="_blank" rel="noopener noreferrer" className="text-white hover:text-yellow-300 transition-all duration-200 hover:scale-110 p-1">
                       <Twitter size={16} />
                     </a>
-                    <a href="#" className="text-white hover:text-yellow-300 transition-all duration-200 hover:scale-110 p-1">
+                    <a href="https://www.instagram.com/traqian58" target="_blank" rel="noopener noreferrer" className="text-white hover:text-yellow-300 transition-all duration-200 hover:scale-110 p-1">
                       <Instagram size={16} />
                     </a>
                   </div>
@@ -447,7 +443,7 @@ export default function Header() {
                         )}
                       </Link>
                       {/* Enhanced Tooltip */}
-                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 px-4 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-50 shadow-xl">
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-3 px-4 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-[10000] shadow-xl">
                         <div className="font-semibold">
                           {user.firstName && user.lastName 
                             ? `${user.firstName} ${user.lastName}` 
@@ -457,8 +453,8 @@ export default function Header() {
                           {user.email === 'admin@meowmeowpetshop.com' ? 'Click to view dashboard' : 'Click to view dashboard'}
                         </div>
                         {/* Arrow */}
-                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
-                          <div className="border-4 border-transparent border-t-gray-900"></div>
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 -mb-1">
+                          <div className="border-4 border-transparent border-b-gray-900"></div>
                         </div>
                       </div>
                     </div>

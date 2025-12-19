@@ -42,11 +42,11 @@ export default function Footer() {
                 className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm text-[var(--meow-yellow)] hover:bg-[var(--meow-yellow)] hover:text-[var(--meow-green-dark)] transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-[var(--meow-yellow)]/30">
                 <Twitter size={16} />
               </a>
-              <a href="#" 
+              <a href="https://www.instagram.com/traqian58" target="_blank" rel="noopener noreferrer"
                 className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm text-[var(--meow-yellow)] hover:bg-[var(--meow-yellow)] hover:text-[var(--meow-green-dark)] transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-[var(--meow-yellow)]/30">
                 <Instagram size={16} />
               </a>
-              <a href="#" 
+              <a href="https://www.youtube.com/@PawCart" target="_blank" rel="noopener noreferrer"
                 className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm text-[var(--meow-yellow)] hover:bg-[var(--meow-yellow)] hover:text-[var(--meow-green-dark)] transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-[var(--meow-yellow)]/30">
                 <Youtube size={16} />
               </a>
@@ -140,11 +140,10 @@ export default function Footer() {
             
             {/* Powered by */}
             <p className="text-gray-400/80 text-xs">
-              Powered By: 
-              <a href="https://znforge.com" target="_blank" rel="noopener noreferrer" 
-                className="text-[var(--meow-yellow)] hover:text-[var(--meow-yellow-light)] transition-colors ml-1 font-semibold hover:underline">
-                ZnForge
-              </a>
+              Powered By:{" "}
+              <span className="text-[var(--meow-yellow)] font-semibold">
+                Traqian Studio
+              </span>
             </p>
           </div>
         </div>

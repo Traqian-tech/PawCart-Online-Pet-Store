@@ -1,5 +1,6 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'wouter';
 import { MapPin, Phone, Clock, Facebook, Instagram, MessageCircle, Send, Twitter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,11 +8,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import Header from '@/components/layout/header';
 import Footer from '@/components/layout/footer';
 import emailjs from '@emailjs/browser';
 
 export default function ContactPage() {
+  const { user } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -21,6 +24,18 @@ export default function ContactPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+
+  // Auto-fill form with logged-in user's information
+  useEffect(() => {
+    if (user) {
+      setFormData(prev => ({
+        ...prev,
+        name: prev.name || (user.name || user.firstName || user.username || ''),
+        email: prev.email || (user.email || ''),
+        phone: prev.phone || (user.phone || ''),
+      }));
+    }
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,31 +53,32 @@ export default function ContactPage() {
     setIsSubmitting(true);
 
     try {
-      // Initialize EmailJS (you can also do this once in your app initialization)
-      emailjs.init("public-4_2EJeuoHymsGSC0t"); // Your public key
+      // Save message to database
+      const userId = user?._id || user?.id || undefined;
+      const userEmail = formData.email || user?.email || undefined;
+      
+      const response = await fetch('/api/contact-messages', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(userId ? { 'x-user-id': String(userId) } : {}),
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          email: userEmail,
+          phone: formData.phone || undefined,
+          subject: formData.subject || undefined,
+          message: formData.message,
+          userId: userId, // Include userId if user is logged in
+        }),
+      });
 
-      const templateParams = {
-        from_name: formData.name,
-        from_phone: formData.phone,
-        from_email: formData.email || 'Not provided',
-        subject: formData.subject,
-        message: formData.message,
-        to_name: 'PawCart Online Pet Store',
-        time: new Date().toLocaleString('en-US', { 
-          timeZone: 'Asia/Hong_Kong',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        }) + ' (Hong Kong Time)',
-      };
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to send message' }));
+        throw new Error(errorData.message || 'Failed to send message');
+      }
 
-      await emailjs.send(
-        'service_lygzcpc', // Your service ID
-        'template_j90cwmp', // Your template ID
-        templateParams
-      );
+      const result = await response.json();
 
       toast({
         title: "Message Sent Successfully!",
@@ -77,39 +93,28 @@ export default function ContactPage() {
         subject: '',
         message: ''
       });
-    } catch (error) {
-      console.error('EmailJS error:', error);
+    } catch (error: any) {
+      console.error('Contact form error:', error);
       
-      // Show error with direct contact information
+      // Show error with actual error message
+      const errorMessage = error.message || 'Failed to send message. Please try again or contact us directly.';
+      
       toast({
-        title: "Unable to Send Message Automatically",
+        title: "Unable to Send Message",
         description: (
           <div className="space-y-2">
-            <p>Please contact us directly:</p>
-            <p className="font-semibold">📧 boqianjlu@gmail.com</p>
-            <p className="font-semibold">📞 852-6214-6811</p>
+            <p className="text-sm">{errorMessage}</p>
+            <p className="text-xs text-gray-600 mt-2">Or contact us directly:</p>
+            <p className="font-semibold text-sm">📧 boqianjlu@gmail.com</p>
+            <p className="font-semibold text-sm">📞 852-6214-6811</p>
           </div>
         ) as any,
         variant: "destructive",
         duration: 10000, // Show for 10 seconds
       });
       
-      // Also try to open email client as backup
-      const mailtoLink = `mailto:boqianjlu@gmail.com?subject=${encodeURIComponent(formData.subject || 'Contact Form Message from ' + formData.name)}&body=${encodeURIComponent(
-        `Name: ${formData.name}\n` +
-        `Phone: ${formData.phone || 'Not provided'}\n` +
-        `Email: ${formData.email || 'Not provided'}\n\n` +
-        `Message:\n${formData.message}\n\n` +
-        `---\nSent from PawCart Online Pet Store Contact Form`
-      )}`;
-      
-      // Delay opening email client to let user see the toast message first
-      setTimeout(() => {
-        window.open(mailtoLink, '_blank');
-      }, 1000);
-      
       // Store the message locally for reference
-      console.log('Contact form submission (not sent via EmailJS):', formData);
+      console.log('Contact form submission failed:', formData);
     } finally {
       setIsSubmitting(false);
     }
@@ -219,17 +224,20 @@ export default function ContactPage() {
                 <Twitter size={20} />
               </a>
               <a
-                href="#"
+                href="https://www.instagram.com/traqian58"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="w-11 h-11 bg-pink-600 rounded-full flex items-center justify-center text-white hover:bg-pink-700 transition-colors active:scale-95"
               >
                 <Instagram size={20} />
               </a>
-              <button
-                onClick={() => window.dispatchEvent(new CustomEvent('toggleChat'))}
-                className="w-11 h-11 bg-green-600 rounded-full flex items-center justify-center text-white hover:bg-green-700 transition-colors active:scale-95"
-              >
-                <MessageCircle size={20} />
-              </button>
+              <Link href="/messenger">
+                <div
+                  className="w-11 h-11 bg-green-600 rounded-full flex items-center justify-center text-white hover:bg-green-700 transition-colors active:scale-95 cursor-pointer"
+                >
+                  <MessageCircle size={20} />
+                </div>
+              </Link>
             </div>
           </div>
         </div>
@@ -329,17 +337,20 @@ export default function ContactPage() {
                   <Twitter size={20} className="sm:w-5 sm:h-5" />
                 </a>
                 <a
-                  href="#"
+                  href="https://www.instagram.com/traqian58"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="w-11 h-11 sm:w-10 sm:h-10 bg-pink-600 rounded-full flex items-center justify-center text-white hover:bg-pink-700 transition-colors active:scale-95"
                 >
                   <Instagram size={20} className="sm:w-5 sm:h-5" />
                 </a>
-                <button
-                  onClick={() => window.dispatchEvent(new CustomEvent('toggleChat'))}
-                  className="w-11 h-11 sm:w-10 sm:h-10 bg-green-600 rounded-full flex items-center justify-center text-white hover:bg-green-700 transition-colors active:scale-95"
-                >
-                  <MessageCircle size={20} className="sm:w-5 sm:h-5" />
-                </button>
+                <Link href="/messenger">
+                  <div
+                    className="w-11 h-11 sm:w-10 sm:h-10 bg-green-600 rounded-full flex items-center justify-center text-white hover:bg-green-700 transition-colors active:scale-95 cursor-pointer"
+                  >
+                    <MessageCircle size={20} className="sm:w-5 sm:h-5" />
+                  </div>
+                </Link>
               </div>
             </div>
           </div>

@@ -96,6 +96,25 @@ export default function MembershipCheckoutPage() {
         const responseData = await response.json();
         
         if (!response.ok) {
+          // Handle specific error: user already has active membership
+          if (response.status === 400 && responseData.currentMembership) {
+            const currentMembership = responseData.currentMembership;
+            const isLifetime = currentMembership.isLifetime;
+            const expiryDate = new Date(currentMembership.expiryDate);
+            
+            toast({
+              title: "Already Have Active Membership",
+              description: `You already have an active ${currentMembership.tier} membership${isLifetime ? ' (Lifetime)' : ` that expires on ${expiryDate.toLocaleDateString()}`}. Please cancel your current membership first or wait for it to expire.`,
+              variant: "destructive",
+              duration: 8000,
+            });
+            
+            setTimeout(() => {
+              setLocation('/dashboard');
+            }, 3000);
+            return;
+          }
+          
           throw new Error(responseData.error || responseData.message || 'Failed to activate membership');
         }
 
@@ -175,6 +194,25 @@ export default function MembershipCheckoutPage() {
       console.log('Membership purchase response:', responseData);
 
       if (!response.ok) {
+        // Handle specific error: user already has active membership
+        if (response.status === 400 && responseData.currentMembership) {
+          const currentMembership = responseData.currentMembership;
+          const isLifetime = currentMembership.isLifetime;
+          const expiryDate = new Date(currentMembership.expiryDate);
+          
+          toast({
+            title: "Already Have Active Membership",
+            description: `You already have an active ${currentMembership.tier} membership${isLifetime ? ' (Lifetime)' : ` that expires on ${expiryDate.toLocaleDateString()}`}. Please cancel your current membership first or wait for it to expire.`,
+            variant: "destructive",
+            duration: 8000,
+          });
+          
+          setTimeout(() => {
+            setLocation('/dashboard');
+          }, 3000);
+          return;
+        }
+        
         const errorMessage = responseData.error || responseData.message || 'Failed to activate membership';
         console.error('Server error details:', responseData.details);
         throw new Error(errorMessage);

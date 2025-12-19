@@ -59,8 +59,8 @@ export default function MobileFooter() {
           <div>
             <h4 className="font-bold text-[var(--meow-yellow)] mb-2.5 text-sm">Policies</h4>
             <ul className="space-y-1.5">
-              <li><Link href="/privacy" className="text-gray-200/90 hover:text-[var(--meow-yellow)] transition-colors">→ Privacy Policy</Link></li>
-              <li><Link href="/terms" className="text-gray-200/90 hover:text-[var(--meow-yellow)] transition-colors">→ Terms</Link></li>
+              <li><Link href="/privacy-policy" className="text-gray-200/90 hover:text-[var(--meow-yellow)] transition-colors">→ Privacy Policy</Link></li>
+              <li><Link href="/terms-of-service" className="text-gray-200/90 hover:text-[var(--meow-yellow)] transition-colors">→ Terms of Service</Link></li>
               <li><Link href="/return-policy" className="text-gray-200/90 hover:text-[var(--meow-yellow)] transition-colors">→ Return Policy</Link></li>
             </ul>
           </div>
@@ -79,7 +79,7 @@ export default function MobileFooter() {
             © 2025 PawCart Pet Shop. All rights reserved.
           </p>
           <p className="text-xs text-gray-400/80 mb-8">
-            Powered By: <a href="https://znforge.com" target="_blank" rel="noopener noreferrer" className="text-[var(--meow-yellow)] hover:text-[var(--meow-yellow-light)] transition-colors font-semibold">ZnForge</a>
+            Powered By: <span className="text-[var(--meow-yellow)] font-semibold">Traqian Studio</span>
           </p>
         </div>
       </div>
